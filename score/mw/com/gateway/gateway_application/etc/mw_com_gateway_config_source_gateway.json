@@ -7,6 +7,6 @@
   ],
   "transport-layer": {
     "id": "sample_hypervisor",
-    "config-path": "/etc/mw_com_gateway_sample_transport_config_source_gateway.json"
+    "config-path": "/workareas/nemanjat/S-CORE/communication/score/mw/com/gateway/gateway_application/etc/mw_com_gateway_sample_transport_config_source_gateway.json"
   }
 }
