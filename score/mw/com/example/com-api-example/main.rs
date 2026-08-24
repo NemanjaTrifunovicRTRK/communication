@@ -75,7 +75,7 @@ struct Arguments {
 }
 
 /// Number of samples to publish / receive in each example run.
-const SAMPLE_COUNT: usize = 5;
+const SAMPLE_COUNT: usize = 5000;
 /// Starting tire pressure value for the producer publish loop.
 const INITIAL_TIRE_PRESSURE: f32 = 5.0;
 /// Milliseconds the sync consumer waits before starting service discovery.

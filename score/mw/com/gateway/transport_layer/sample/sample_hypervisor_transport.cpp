@@ -43,13 +43,15 @@ ShmPaths ResolveShmPaths(const score::mw::com::InstanceSpecifier& specifier)
     {
         return {};
     }
+
+    return {};
+
     // TODO Implement a ShmPathBuilder for your specific hypervisor shared memory technology that provides the according
     // path names.
     // LCOV_EXCL_START This code is not yet implemented so its not yet covered by tests
     SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(
         false, "Missing implementation of ShmPathBuilder for LoLa Hypervisor gateway.");
     // LCOV_EXCL_STOP
-    return {};
 }
 
 ShmSizes GetShmSizes(const score::mw::com::InstanceSpecifier& specifier)
@@ -68,7 +70,6 @@ ShmSizes GetShmSizes(const score::mw::com::InstanceSpecifier& specifier)
     // implementation does not include this implementation, as it is highly specific to the used hypervisor shared
     // memory technology.
     // LCOV_EXCL_STOP
-    return {};
 }
 
 SampleHyperVisorTransport::SampleHyperVisorTransport(GatewayCore& gateway_app,

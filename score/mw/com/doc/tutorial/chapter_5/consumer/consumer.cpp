@@ -134,6 +134,7 @@ int main()
         // middleware thread) whenever a new sample of the "message" event has been received. Inside the handler, a
         // call to GetNewSamples() is guaranteed to provide at least one new sample.
         const auto set_receive_handler_result = event.SetReceiveHandler([&proxy]() noexcept {
+            std::cout << "Handler invoked!" << std::endl;
             auto& receive_event = proxy.value().message;
             auto get_new_samples_result = receive_event.GetNewSamples(
                 [](auto&& sample) {
