@@ -64,6 +64,7 @@ class GatewayApplication : public GatewayCore
                                      impl::ServiceElementType updated_element_type,
                                      std::string updated_element_name,
                                      std::vector<std::uint8_t> updated_element_data) override;
+    void OnRemoteGatewayConnected() override;
 
   private:
     using FindCallbackScopedCb =
@@ -75,7 +76,15 @@ class GatewayApplication : public GatewayCore
 
     std::recursive_mutex mutex_;
     std::unordered_map<std::string, score::mw::com::GenericProxy> proxies_;
+    /// \brief Forwarded services, which are currently available locally (i.e. found and not yet disappeared).
+    /// \details proxies_ is not sufficient for this, since proxies are kept alive after a service disappeared.
+    std::unordered_set<std::string> available_services_;
     std::unordered_map<std::string, score::mw::com::GenericSkeleton> skeletons_;
+    /// \brief Skeletons from skeletons_, which are currently offered.
+    /// \details GenericSkeleton::OfferService() must not be called on an already offered skeleton: it re-runs
+    /// PrepareOffer() and, once service discovery rejects the duplicate offer, its cleanup calls PrepareStopOffer() on
+    /// the binding and all events, leaving the skeleton announced as offered but with all events stop-offered.
+    std::unordered_set<std::string> offered_skeletons_;
     std::vector<score::mw::com::FindServiceHandle> find_handles_;
     std::unordered_map<std::string, std::unordered_set<std::string>> active_event_subscriptions_;
 
@@ -101,6 +110,21 @@ class GatewayApplication : public GatewayCore
                                     const std::string& event_name,
                                     bool has_subscribers);
     void ReRegisterActiveEventSubscriptions(const std::string& specifier_str);
+
+    /// \brief Unregisters the update notification at the source gateway, if there is no active local subscription
+    /// for the given event.
+    /// \details The source gateway only forwards updates for events, for which we registered. Receiving an update for
+    /// an event without active local subscription means, that both sides got out of sync, e.g. because an
+    /// UnregisterUpdateNotification got lost while the connection was down, or because this gateway got restarted
+    /// while the source gateway kept its subscriptions.
+    void UnregisterStaleUpdateNotification(const score::mw::com::InstanceSpecifier& service_instance_specifier,
+                                           const std::string& specifier_str,
+                                           impl::ServiceElementType element_type,
+                                           const std::string& element_name);
+
+    /// \brief Offers the given (existing) skeleton, unless it is already offered.
+    score::Result<void> OfferSkeletonIfNotOffered(const std::string& specifier_str,
+                                                  score::mw::com::GenericSkeleton& skeleton);
 
     // Test-only: grant unit-test fixtures access to private members and methods.
     friend class GatewayApplicationSubscriptionTest;

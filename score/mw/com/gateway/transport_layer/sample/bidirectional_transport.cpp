@@ -224,6 +224,11 @@ void BidirectionalTransport::ConnectionLoop(score::cpp::stop_token stop_token)
         }
 
         is_connected_ = true;
+        {
+            std::lock_guard<std::mutex> lock(dispatch_mutex_);
+            connection_established_pending_ = true;
+        }
+        dispatch_cv_.notify_one();
         ReceiveUntilDisconnect(stop_token);
 
         CleanupSocketsForReconnection();
@@ -351,19 +356,42 @@ void BidirectionalTransport::DispatchLoop(const score::cpp::stop_token& stop_tok
     while (!stop_token.stop_requested())
     {
         std::unique_ptr<TransportMessage> message;
+        bool connection_established{false};
         {
             std::unique_lock<std::mutex> lock(dispatch_mutex_);
             dispatch_cv_.wait(lock, [this] {
-                return !dispatch_queue_.empty() || dispatch_shutdown_.load();
+                return !dispatch_queue_.empty() || connection_established_pending_ || dispatch_shutdown_.load();
             });
 
-            if (dispatch_shutdown_.load() && dispatch_queue_.empty())
+            if (dispatch_shutdown_.load())
             {
-                break;
+                if (dispatch_queue_.empty())
+                {
+                    break;
+                }
+                // Don't notify about a connection while shutting down, only drain the queue.
+                connection_established_pending_ = false;
             }
 
-            message = std::move(dispatch_queue_.front());
-            dispatch_queue_.pop();
+            if (connection_established_pending_)
+            {
+                connection_established_pending_ = false;
+                connection_established = true;
+            }
+            else
+            {
+                message = std::move(dispatch_queue_.front());
+                dispatch_queue_.pop();
+            }
+        }
+
+        if (connection_established)
+        {
+            if (has_connection_handler_)
+            {
+                connection_handler_();
+            }
+            continue;
         }
 
         message_handler_(std::move(message));  // COV_JUSTIFIED gateway-dispatch-loop-calls-handler
@@ -469,6 +497,12 @@ void BidirectionalTransport::SetMessageHandler(MessageHandler handler)
 {
     message_handler_ = std::move(handler);
     has_message_handler_ = true;
+}
+
+void BidirectionalTransport::SetConnectionHandler(ConnectionHandler handler)
+{
+    connection_handler_ = std::move(handler);
+    has_connection_handler_ = true;
 }
 
 bool BidirectionalTransport::IsConnected() const

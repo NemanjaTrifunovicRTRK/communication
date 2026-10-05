@@ -71,6 +71,12 @@ class BidirectionalTransport : public IBidirectionalTransport
     /// \param handler The callback to handle incoming messages.
     void SetMessageHandler(MessageHandler handler) override;
 
+    /// \brief Set a callback that is invoked each time a connection to the remote side has been (re-)established.
+    /// \details The callback is executed on the dispatch thread (not on the connection thread), so it may call
+    /// SendRequest() without blocking ACK reception.
+    /// \param handler The callback to handle connection establishment.
+    void SetConnectionHandler(ConnectionHandler handler) override;
+
   private:
     /// \brief Send the given message and wait for the ACK response with the same sequence number.
     /// Returns error if unknown sequence number, timeout ocurres or disconnect happens.
@@ -111,6 +117,9 @@ class BidirectionalTransport : public IBidirectionalTransport
     MessageHandler message_handler_;
     bool has_message_handler_{false};
 
+    ConnectionHandler connection_handler_;
+    bool has_connection_handler_{false};
+
     // Dispatch queue: incoming non-ACK messages are pushed here by the receive loop and
     // processed by a dedicated dispatch thread. This decouples the receive loop from the
     // message handler, so the handler can call SendRequest() without blocking ACK reception.
@@ -118,6 +127,9 @@ class BidirectionalTransport : public IBidirectionalTransport
     std::mutex dispatch_mutex_;
     std::condition_variable dispatch_cv_;
     std::atomic<bool> dispatch_shutdown_{false};
+    // Set (under dispatch_mutex_) by the connection loop once a connection is established. The dispatch thread then
+    // calls the connection handler before dispatching any message received on the new connection.
+    bool connection_established_pending_{false};
 
     std::unique_ptr<IMessageFramer> message_framer_;
     std::unique_ptr<IPendingRequestTracker> pending_tracker_;

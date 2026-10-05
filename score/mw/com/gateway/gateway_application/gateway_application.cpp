@@ -135,6 +135,7 @@ void GatewayApplication::OnServiceAvailabilityChanged(const std::string& specifi
     if (handles.empty())
     {
         score::mw::log::LogInfo() << "GatewayApplication: Service disappeared: " << specifier_str;
+        available_services_.erase(specifier_str);
         OnServiceUnavailable(specifier_str);
         return;
     }
@@ -144,6 +145,7 @@ void GatewayApplication::OnServiceAvailabilityChanged(const std::string& specifi
         // Proxy kept alive from a previous cycle (see OnServiceUnavailable). Re-propagate so
         // the remote gateway recreates its skeleton.
         score::mw::log::LogInfo() << "GatewayApplication: Service re-found, re-propagating: " << specifier_str;
+        available_services_.insert(specifier_str);
         PropagateService(specifier_str);
         return;
     }
@@ -158,6 +160,7 @@ void GatewayApplication::OnServiceAvailabilityChanged(const std::string& specifi
     }
 
     proxies_.emplace(specifier_str, std::move(proxy_result).value());
+    available_services_.insert(specifier_str);
     PropagateService(specifier_str);
 }
 
@@ -213,14 +216,26 @@ void GatewayApplication::PropagateService(const std::string& specifier_str)
     if (!provide_result.has_value())
     {
         score::mw::log::LogError() << "GatewayApplication: ProvideService failed for " << specifier_str
-                                   << ", will retry on next discovery";
-        // Next time the service instance gets found again, proxy will get recreated and PropagateService
-        // will be retried.
-        proxies_.erase(specifier_str);
+                                   << ", will retry on reconnect or next discovery";
+        // Keep the proxy: PropagateService gets retried either when the remote gateway (re-)connects (see
+        // OnRemoteGatewayConnected) or when the service instance gets found again.
         return;
     }
 
     score::mw::log::LogInfo() << "GatewayApplication: Propagated service " << specifier_str;
+}
+
+void GatewayApplication::OnRemoteGatewayConnected()
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    // The remote gateway may have been restarted and lost its skeletons. Since the local service discovery won't
+    // report our (unchanged) local services again, we have to re-propagate them explicitly.
+    for (const auto& specifier_str : available_services_)
+    {
+        score::mw::log::LogInfo() << "GatewayApplication: Remote gateway connected, re-propagating: "
+                                  << specifier_str;
+        PropagateService(specifier_str);
+    }
 }
 
 void GatewayApplication::RegisterEventReceiveHandlerCallback(score::mw::com::GenericSkeleton& skeleton,
@@ -341,6 +356,31 @@ void GatewayApplication::ReRegisterActiveEventSubscriptions(const std::string& s
     }
 }
 
+void GatewayApplication::UnregisterStaleUpdateNotification(
+    const score::mw::com::InstanceSpecifier& service_instance_specifier,
+    const std::string& specifier_str,
+    impl::ServiceElementType element_type,
+    const std::string& element_name)
+{
+    const auto sub_it = active_event_subscriptions_.find(specifier_str);
+    if ((sub_it != active_event_subscriptions_.cend()) && (sub_it->second.count(element_name) > 0U))
+    {
+        return;
+    }
+
+    score::mw::log::LogInfo() << "GatewayApplication: Received update for " << element_name << " of " << specifier_str
+                              << " without active local subscription, unregistering at source gateway";
+
+    auto result =
+        transport_layer_->UnregisterUpdateNotification(service_instance_specifier, element_type, element_name);
+    if (!result.has_value())
+    {
+        // Not critical: the next stale update triggers another attempt.
+        score::mw::log::LogWarn() << "GatewayApplication: Failed to unregister stale update notification for "
+                                  << element_name << " of " << specifier_str;
+    }
+}
+
 score::Result<void> GatewayApplication::ProvideService(score::mw::com::InstanceSpecifier service_instance_specifier,
                                                        std::vector<score::mw::com::EventInfo> service_elements)
 {
@@ -361,15 +401,16 @@ score::Result<void> GatewayApplication::ProvideService(score::mw::com::InstanceS
         // Reuse the existing skeleton. Creating a new one would do placement-new on the SHM
         // EventSubscriptionControl, zeroing it while the local consumer proxy still holds an
         // active subscription — causing a fatal Unsubscribe assertion crash at shutdown.
-        // Re-offer (if stopped by HandleStopOfferServiceRequest) and re-register event
-        // subscriptions so the (re-started) source gateway knows which events have active consumers.
+        // Re-offer (only if stopped by HandleStopOfferServiceRequest — it is still offered after a mere connection
+        // loss or a source gateway restart) and re-register event subscriptions so the (re-started) source gateway
+        // knows which events have active consumers.
         score::mw::log::LogInfo() << "GatewayApplication: Reusing existing skeleton for " << service_instance_specifier;
 
-        auto offer_result = existing_it->second.OfferService();
+        auto offer_result = OfferSkeletonIfNotOffered(service_instance_specifier_str, existing_it->second);
         if (!offer_result.has_value())
         {
             score::mw::log::LogWarn() << "GatewayApplication: OfferService on reused skeleton returned error for "
-                                      << service_instance_specifier << " (may already be offered)";
+                                      << service_instance_specifier;
         }
 
         ReRegisterActiveEventSubscriptions(service_instance_specifier_str);
@@ -398,7 +439,7 @@ score::Result<void> GatewayApplication::ProvideService(score::mw::com::InstanceS
         RegisterEventReceiveHandlerCallback(skeleton, service_instance_specifier_str, std::string{element.name});
     }
 
-    auto offer_result = skeleton.OfferService();
+    auto offer_result = OfferSkeletonIfNotOffered(service_instance_specifier_str, skeleton);
     if (!offer_result.has_value())
     {
         score::mw::log::LogError() << "GatewayApplication: Failed to offer service for " << service_instance_specifier;
@@ -426,6 +467,7 @@ void GatewayApplication::StopOfferService(score::mw::com::InstanceSpecifier serv
     // Stop offering but keep the skeleton. The source side may decide to re-offer anytime, then we need our skeleton
     // anyhow.
     it->second.StopOfferService();
+    offered_skeletons_.erase(service_instance_specifier_str);
     score::mw::log::LogInfo() << "GatewayApplication: Stopped offering " << service_instance_specifier
                               << " (skeleton kept for reuse)";
 }
@@ -442,7 +484,7 @@ score::Result<void> GatewayApplication::OfferService(score::mw::com::InstanceSpe
         return MakeUnexpected(GatewayErrorc::kSkeletonOfferFailed);
     }
 
-    auto offer_result = it->second.OfferService();
+    auto offer_result = OfferSkeletonIfNotOffered(specifier_str, it->second);
     if (!offer_result.has_value())
     {
         score::mw::log::LogError() << "GatewayApplication: Failed to offer service for " << service_instance_specifier;
@@ -450,6 +492,25 @@ score::Result<void> GatewayApplication::OfferService(score::mw::com::InstanceSpe
     }
 
     score::mw::log::LogInfo() << "GatewayApplication: Offered skeleton service for " << service_instance_specifier;
+    return {};
+}
+
+score::Result<void> GatewayApplication::OfferSkeletonIfNotOffered(const std::string& specifier_str,
+                                                                  score::mw::com::GenericSkeleton& skeleton)
+{
+    if (offered_skeletons_.count(specifier_str) > 0U)
+    {
+        score::mw::log::LogDebug() << "GatewayApplication: Skeleton for " << specifier_str
+                                   << " is already offered, skipping OfferService";
+        return {};
+    }
+
+    auto offer_result = skeleton.OfferService();
+    if (!offer_result.has_value())
+    {
+        return offer_result;
+    }
+    offered_skeletons_.insert(specifier_str);
     return {};
 }
 
@@ -587,7 +648,14 @@ score::Result<void> GatewayApplication::NotifyUpdate(score::mw::com::InstanceSpe
                                                      std::string updated_element_name,
                                                      std::vector<std::uint8_t> updated_element_data)
 {
+    // Locked, so that checking active_event_subscriptions_ and sending a stale-unregistration is serialized with
+    // OnSubscriptionStateChanged. Otherwise a stale UnregisterUpdateNotification could overtake a concurrent
+    // RegisterUpdateNotification for the same event.
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto specifier_str = std::string(service_instance_specifier.ToString());
+
+    UnregisterStaleUpdateNotification(
+        service_instance_specifier, specifier_str, updated_element_type, updated_element_name);
 
     auto it = skeletons_.find(specifier_str);
     if (it == skeletons_.end())

@@ -94,6 +94,13 @@ class GatewayCore
                                              impl::ServiceElementType updated_element_type,
                                              std::string updated_element_name,
                                              std::vector<std::uint8_t> updated_element_data) = 0;
+
+    /// \brief Informs the gateway application, that the connection to the remote gateway has been (re-)established.
+    /// \details This API is expected to be called by the transport layer implementation each time it (re-)connects
+    /// to the remote gateway. The remote gateway may have been restarted in the meantime and thus may have lost all
+    /// state (e.g. the Forwarding Skeletons created upon earlier ProvideService requests). The gateway application
+    /// shall therefore re-propagate all currently available local service instances to the remote gateway.
+    virtual void OnRemoteGatewayConnected() = 0;
 };
 
 }  // namespace score::mw::com::gateway

@@ -857,6 +857,44 @@ TEST_F(BidirectionalTransportSocketFixture, DispatchThreadDeliversQueuedMessageT
     transport_->Shutdown();
     transport_.reset();
 }
+TEST_F(BidirectionalTransportSocketFixture, ConnectionHandlerIsCalledWhenConnectionIsEstablished)
+{
+    // Given connected sockets and a receive that blocks until released
+    CreateTransport().WithASocketSetupThatIsConnectedAndHasAccepted();
+
+    std::shared_ptr<std::atomic<bool>> allow_disconnect{new std::atomic<bool>{false}};
+    EXPECT_CALL(socket_mock_, recv(kReceiveFd, _, MessageHeader::kWireSize, _))
+        .WillOnce(Invoke([allow_disconnect](
+                             auto, void*, const std::size_t, auto) -> score::cpp::expected<ssize_t, score::os::Error> {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+            while (!allow_disconnect->load() && std::chrono::steady_clock::now() < deadline)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return static_cast<ssize_t>(0);
+        }));
+
+    std::promise<void> connected_promise;
+    auto connected_future = connected_promise.get_future();
+    std::atomic<bool> handler_reported{false};
+    transport_->SetConnectionHandler([&handler_reported, &connected_promise]() {
+        if (!handler_reported.exchange(true))
+        {
+            connected_promise.set_value();
+        }
+    });
+
+    // When Setup is called and the connection gets established
+    const auto setup_result = transport_->Setup();
+    ASSERT_TRUE(setup_result.has_value());
+
+    // Then the connection handler is called on the dispatch thread
+    EXPECT_EQ(connected_future.wait_for(std::chrono::milliseconds(500)), std::future_status::ready);
+
+    allow_disconnect->store(true, std::memory_order_relaxed);
+    transport_->Shutdown();
+    transport_.reset();
+}
 TEST_F(BidirectionalTransportSocketFixture, IncomingRequestIsReceivedAndDispatched)
 {
     // Given connected sockets with an incoming request message that will be received

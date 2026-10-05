@@ -92,6 +92,9 @@ score::Result<void> SampleHyperVisorTransport::Setup()
     message_transport_->SetMessageHandler([this](std::unique_ptr<TransportMessage> message) {
         OnMessageReceived(std::move(message));
     });
+    message_transport_->SetConnectionHandler([this]() {
+        gateway_app_.OnRemoteGatewayConnected();
+    });
     return message_transport_->Setup();
 }
 

@@ -28,6 +28,7 @@ class IBidirectionalTransport
 {
   public:
     using MessageHandler = score::cpp::callback<void(std::unique_ptr<TransportMessage>), 64>;
+    using ConnectionHandler = score::cpp::callback<void(), 64>;
 
     virtual ~IBidirectionalTransport() = default;
 
@@ -40,6 +41,7 @@ class IBidirectionalTransport
     virtual score::Result<void> SendNotification(TransportMessage& message) = 0;
 
     virtual void SetMessageHandler(MessageHandler handler) = 0;
+    virtual void SetConnectionHandler(ConnectionHandler handler) = 0;
 };
 
 }  // namespace score::mw::com::gateway

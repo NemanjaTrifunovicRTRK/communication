@@ -168,10 +168,11 @@ TEST(GatewayApplicationUnregisterUpdateNotificationTest, NoProxyReturnsUnknownSe
 TEST(GatewayApplicationNotifyUpdateTest, NoSkeletonReturnsUnknownServiceInstance)
 {
     // Given a GatewayApplication with no skeleton registered for the specifier
-    GatewayApplication app{MakeConfig({}, {"svc/b"})};
+    auto [app, transport] = MakeAppWithMockTransport(MakeConfig({}, {"svc/b"}));
+    std::ignore = transport;
 
     // When NotifyUpdate is called for that specifier
-    const auto result = app.NotifyUpdate(
+    const auto result = app->NotifyUpdate(
         MakeSpecifier("svc/b"), impl::ServiceElementType::EVENT, "EventA", std::vector<std::uint8_t>{});
 
     // Then the call must fail with kUnknownServiceInstance
@@ -911,7 +912,7 @@ TEST_F(GatewayApplicationFlowTest, ServiceReFoundRePropagates)
     FireServiceDiscovery(impl::ServiceHandleContainer<impl::HandleType>{MakeProxyHandle({"EventA"})});
 }
 
-TEST_F(GatewayApplicationFlowTest, PropagateServiceFailureErasesProxy)
+TEST_F(GatewayApplicationFlowTest, PropagateServiceFailureKeepsProxyAndRetriesOnRediscovery)
 {
     // Given discovery started and the transport rejects ProvideService
     StartAndCaptureFindHandler();
@@ -919,10 +920,61 @@ TEST_F(GatewayApplicationFlowTest, PropagateServiceFailureErasesProxy)
         .WillOnce(::testing::Return(score::MakeUnexpected(GatewayErrorc::kSkeletonCreationFailed)))
         .WillOnce(::testing::Return(score::Result<void>{}));
 
-    // When the service is found (ProvideService fails so proxy is erased) and then found again
-    // Then a brand new proxy is created and ProvideService retried.
+    // When the service is found (ProvideService fails, proxy is kept) and then found again
+    // Then ProvideService is retried.
     FireServiceDiscovery(impl::ServiceHandleContainer<impl::HandleType>{MakeProxyHandle({"EventA"})});
     FireServiceDiscovery(impl::ServiceHandleContainer<impl::HandleType>{MakeProxyHandle({"EventA"})});
+}
+
+TEST_F(GatewayApplicationFlowTest, PropagateServiceFailureIsRetriedOnRemoteGatewayConnected)
+{
+    // Given discovery started and the transport rejects the first ProvideService (e.g. remote not connected)
+    StartAndCaptureFindHandler();
+    EXPECT_CALL(*transport_mock_, ProvideService(::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(score::MakeUnexpected(GatewayErrorc::kSkeletonCreationFailed)))
+        .WillOnce(::testing::Return(score::Result<void>{}));
+    FireServiceDiscovery(impl::ServiceHandleContainer<impl::HandleType>{MakeProxyHandle({"EventA"})});
+
+    // When the remote gateway connects
+    // Then ProvideService is retried.
+    app_->OnRemoteGatewayConnected();
+}
+
+TEST_F(GatewayApplicationFlowTest, RemoteGatewayConnectedRePropagatesAvailableService)
+{
+    // Given a service was found and successfully propagated
+    StartAndCaptureFindHandler();
+    FireServiceDiscovery(impl::ServiceHandleContainer<impl::HandleType>{MakeProxyHandle({"EventA"})});
+
+    // When the remote gateway (re-)connects, e.g. after a restart
+    // Then the service is propagated again.
+    EXPECT_CALL(*transport_mock_, ProvideService(::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(score::Result<void>{}));
+    app_->OnRemoteGatewayConnected();
+}
+
+TEST_F(GatewayApplicationFlowTest, RemoteGatewayConnectedDoesNotPropagateDisappearedService)
+{
+    // Given a service was found and then disappeared (proxy kept alive)
+    StartAndCaptureFindHandler();
+    FireServiceDiscovery(impl::ServiceHandleContainer<impl::HandleType>{MakeProxyHandle({"EventA"})});
+    FireServiceDiscovery(impl::ServiceHandleContainer<impl::HandleType>{});
+
+    // When the remote gateway (re-)connects
+    // Then the disappeared service is not propagated.
+    EXPECT_CALL(*transport_mock_, ProvideService(::testing::_, ::testing::_)).Times(0);
+    app_->OnRemoteGatewayConnected();
+}
+
+TEST_F(GatewayApplicationFlowTest, RemoteGatewayConnectedWithoutServicesDoesNothing)
+{
+    // Given no service has been found yet
+    StartAndCaptureFindHandler();
+
+    // When the remote gateway connects
+    // Then nothing is propagated.
+    EXPECT_CALL(*transport_mock_, ProvideService(::testing::_, ::testing::_)).Times(0);
+    app_->OnRemoteGatewayConnected();
 }
 
 TEST_F(GatewayApplicationFlowTest, PropagateServiceInvalidSpecifierKeyReturnsEarly)
@@ -1117,6 +1169,68 @@ TEST_F(GatewayApplicationFlowTest, ProvideServiceReuseExistingSkeletonReRegister
     EXPECT_TRUE(result.has_value());
 }
 
+TEST_F(GatewayApplicationFlowTest, ProvideServiceReuseOfOfferedSkeletonDoesNotReOffer)
+{
+    // Given a service was provided (skeleton is offered) and has an active subscription
+    ASSERT_TRUE(app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"})).has_value());
+    CallOnSubscriptionStateChanged("svc/a", "EventA", true);
+    ASSERT_NE(skeleton_binding_mock_, nullptr);
+    ASSERT_NE(skeleton_event_mocks_.find("EventA"), skeleton_event_mocks_.cend());
+    auto* const skeleton_event_mock = skeleton_event_mocks_["EventA"];
+
+    // When ProvideService is called again for the same specifier, as it happens after a mere connection loss
+    // between the gateways (the skeleton never got stop-offered)
+    // Then the skeleton is neither offered again nor (partially) stop-offered
+    EXPECT_CALL(*skeleton_binding_mock_, PrepareOffer(::testing::_, ::testing::_, ::testing::_)).Times(0);
+    EXPECT_CALL(*skeleton_binding_mock_, PrepareStopOffer(::testing::_)).Times(0);
+    EXPECT_CALL(*skeleton_event_mock, PrepareOffer(::testing::_)).Times(0);
+    EXPECT_CALL(*skeleton_event_mock, PrepareStopOffer()).Times(0);
+    EXPECT_CALL(service_discovery_mock_, OfferService(::testing::_)).Times(0);
+    // and the active subscription is re-registered via the transport.
+    EXPECT_CALL(*transport_mock_,
+                RegisterUpdateNotification(::testing::_, impl::ServiceElementType::EVENT, std::string{"EventA"}))
+        .WillOnce(::testing::Return(score::Result<void>{}));
+
+    const auto result = app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"}));
+    EXPECT_TRUE(result.has_value());
+
+    // and update notifications can still be delivered to local consumers.
+    EXPECT_CALL(*skeleton_event_mock, Notify()).WillOnce(::testing::Return(score::Result<void>{}));
+    EXPECT_TRUE(app_->NotifyUpdate(
+                        MakeSpecifier("svc/a"), impl::ServiceElementType::EVENT, "EventA", std::vector<std::uint8_t>{})
+                    .has_value());
+
+    // Verify now, since the destruction of the application legitimately stop-offers the skeleton.
+    ::testing::Mock::VerifyAndClearExpectations(skeleton_binding_mock_);
+    ::testing::Mock::VerifyAndClearExpectations(skeleton_event_mock);
+}
+
+TEST_F(GatewayApplicationFlowTest, ProvideServiceReuseOfStopOfferedSkeletonReOffers)
+{
+    // Given a service was provided and then stop-offered on request of the source gateway
+    ASSERT_TRUE(app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"})).has_value());
+    app_->StopOfferService(MakeSpecifier("svc/a"));
+
+    // When ProvideService is called again for the same specifier
+    // Then the reused skeleton is offered again.
+    EXPECT_CALL(service_discovery_mock_, OfferService(::testing::_)).WillOnce(::testing::Return(score::Result<void>{}));
+
+    const auto result = app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"}));
+    EXPECT_TRUE(result.has_value());
+}
+
+TEST_F(GatewayApplicationFlowTest, OfferServiceOnAlreadyOfferedSkeletonIsNoOp)
+{
+    // Given a service has been provided (skeleton exists and is offered)
+    ASSERT_TRUE(app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"})).has_value());
+
+    // When OfferService is called for it
+    // Then it succeeds without offering again.
+    EXPECT_CALL(service_discovery_mock_, OfferService(::testing::_)).Times(0);
+    const auto result = app_->OfferService(MakeSpecifier("svc/a"));
+    EXPECT_TRUE(result.has_value());
+}
+
 TEST_F(GatewayApplicationFlowTest, OfferServiceWithExistingSkeletonSucceeds)
 {
     // Given a service has been provided (skeleton exists)
@@ -1148,6 +1262,93 @@ TEST_F(GatewayApplicationFlowTest, NotifyUpdateWithExistingSkeletonNotifiesEvent
     // Then the skeleton event is notified.
     EXPECT_CALL(*skeleton_event_mocks_["EventA"], Notify()).WillOnce(::testing::Return(score::Result<void>{}));
 
+    const auto result = app_->NotifyUpdate(
+        MakeSpecifier("svc/a"), impl::ServiceElementType::EVENT, "EventA", std::vector<std::uint8_t>{});
+    EXPECT_TRUE(result.has_value());
+}
+
+TEST_F(GatewayApplicationFlowTest, NotifyUpdateWithActiveSubscriptionDoesNotUnregisterAtSource)
+{
+    // Given a service has been provided with "EventA", which has an active local subscription
+    ASSERT_TRUE(app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"})).has_value());
+    CallOnSubscriptionStateChanged("svc/a", "EventA", true);
+
+    // When NotifyUpdate is called for that event
+    // Then no unregistration is sent to the source gateway.
+    EXPECT_CALL(*transport_mock_, UnregisterUpdateNotification(::testing::_, ::testing::_, ::testing::_)).Times(0);
+
+    const auto result = app_->NotifyUpdate(
+        MakeSpecifier("svc/a"), impl::ServiceElementType::EVENT, "EventA", std::vector<std::uint8_t>{});
+    EXPECT_TRUE(result.has_value());
+}
+
+TEST_F(GatewayApplicationFlowTest, NotifyUpdateWithoutActiveSubscriptionUnregistersAtSource)
+{
+    // Given a service has been provided with "EventA", which has no active local subscription
+    // (e.g. this gateway got restarted while the source gateway kept its subscription)
+    ASSERT_TRUE(app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"})).has_value());
+    ASSERT_NE(skeleton_event_mocks_.find("EventA"), skeleton_event_mocks_.cend());
+
+    // When NotifyUpdate is called for that event
+    // Then the stale update notification is unregistered at the source gateway
+    EXPECT_CALL(*transport_mock_,
+                UnregisterUpdateNotification(::testing::_, impl::ServiceElementType::EVENT, std::string{"EventA"}))
+        .WillOnce(::testing::Return(score::Result<void>{}));
+    // and the update is still delivered locally.
+    EXPECT_CALL(*skeleton_event_mocks_["EventA"], Notify()).WillOnce(::testing::Return(score::Result<void>{}));
+
+    const auto result = app_->NotifyUpdate(
+        MakeSpecifier("svc/a"), impl::ServiceElementType::EVENT, "EventA", std::vector<std::uint8_t>{});
+    EXPECT_TRUE(result.has_value());
+}
+
+TEST_F(GatewayApplicationFlowTest, NotifyUpdateAfterLostUnregistrationRetriesUnregistration)
+{
+    // Given a service has been provided with "EventA" and a consumer subscribed
+    ASSERT_TRUE(app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"})).has_value());
+    CallOnSubscriptionStateChanged("svc/a", "EventA", true);
+
+    // and the consumer unsubscribed while the connection was down, so the unregistration got lost
+    EXPECT_CALL(*transport_mock_,
+                UnregisterUpdateNotification(::testing::_, impl::ServiceElementType::EVENT, std::string{"EventA"}))
+        .WillOnce(::testing::Return(score::MakeUnexpected(GatewayErrorc::kNotificationFailed)))
+        .WillOnce(::testing::Return(score::Result<void>{}));
+    CallOnSubscriptionStateChanged("svc/a", "EventA", false);
+
+    // When the source gateway still forwards an update for that event after reconnecting
+    // Then the unregistration is sent again (second expectation above).
+    const auto result = app_->NotifyUpdate(
+        MakeSpecifier("svc/a"), impl::ServiceElementType::EVENT, "EventA", std::vector<std::uint8_t>{});
+    EXPECT_TRUE(result.has_value());
+}
+
+TEST_F(GatewayApplicationFlowTest, NotifyUpdateWithoutSkeletonUnregistersAtSource)
+{
+    // Given no skeleton exists for "svc/a" (e.g. this gateway got restarted and has not yet received ProvideService)
+    // When NotifyUpdate is called for it
+    // Then the stale update notification is unregistered at the source gateway
+    EXPECT_CALL(*transport_mock_,
+                UnregisterUpdateNotification(::testing::_, impl::ServiceElementType::EVENT, std::string{"EventA"}))
+        .WillOnce(::testing::Return(score::Result<void>{}));
+
+    // and NotifyUpdate fails with kUnknownServiceInstance.
+    const auto result = app_->NotifyUpdate(
+        MakeSpecifier("svc/a"), impl::ServiceElementType::EVENT, "EventA", std::vector<std::uint8_t>{});
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), GatewayErrorc::kUnknownServiceInstance);
+}
+
+TEST_F(GatewayApplicationFlowTest, NotifyUpdateToleratesStaleUnregistrationFailure)
+{
+    // Given a service has been provided with "EventA", which has no active local subscription
+    ASSERT_TRUE(app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"})).has_value());
+
+    // and unregistering at the source gateway fails
+    EXPECT_CALL(*transport_mock_, UnregisterUpdateNotification(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(score::MakeUnexpected(GatewayErrorc::kNotificationFailed)));
+
+    // When NotifyUpdate is called for that event
+    // Then the failure is only logged and the update is still delivered.
     const auto result = app_->NotifyUpdate(
         MakeSpecifier("svc/a"), impl::ServiceElementType::EVENT, "EventA", std::vector<std::uint8_t>{});
     EXPECT_TRUE(result.has_value());
@@ -1239,8 +1440,9 @@ TEST_F(GatewayApplicationFlowTest, ProvideServiceSetReceiveHandlerRegistrationFa
 
 TEST_F(GatewayApplicationFlowTest, OfferServiceFailureReturnsError)
 {
-    // Given a service has been provided (skeleton exists and offered once)
+    // Given a service has been provided (skeleton exists and offered once) and then stop-offered
     ASSERT_TRUE(app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"})).has_value());
+    app_->StopOfferService(MakeSpecifier("svc/a"));
     ASSERT_NE(skeleton_binding_mock_, nullptr);
 
     // and the binding will now reject any further offer
@@ -1256,9 +1458,10 @@ TEST_F(GatewayApplicationFlowTest, OfferServiceFailureReturnsError)
 
 TEST_F(GatewayApplicationFlowTest, ReusedSkeletonOfferFailureIsToleratedAndResubscribes)
 {
-    // Given a service was provided with an active subscription
+    // Given a service was provided with an active subscription and then stop-offered
     ASSERT_TRUE(app_->ProvideService(MakeSpecifier("svc/a"), MakeElements({"EventA"})).has_value());
     CallOnSubscriptionStateChanged("svc/a", "EventA", true);
+    app_->StopOfferService(MakeSpecifier("svc/a"));
     ASSERT_NE(skeleton_binding_mock_, nullptr);
 
     // and re-offering the reused skeleton fails (only a warning is expected)

@@ -30,6 +30,7 @@ class BidirectionalTransportMock : public IBidirectionalTransport
     MOCK_METHOD((score::Result<void>), SendRequest, (TransportMessage&), (override));
     MOCK_METHOD((score::Result<void>), SendNotification, (TransportMessage&), (override));
     MOCK_METHOD((void), SetMessageHandler, (MessageHandler), (override));
+    MOCK_METHOD((void), SetConnectionHandler, (ConnectionHandler), (override));
 };
 
 }  // namespace score::mw::com::gateway

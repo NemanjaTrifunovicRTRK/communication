@@ -51,6 +51,10 @@ class SampleHyperVisorTransportTest : public ::testing::Test
             .WillOnce([this](IBidirectionalTransport::MessageHandler handler) {
                 captured_handler_ = std::move(handler);
             });
+        EXPECT_CALL(*bi_directional_transport_mock_, SetConnectionHandler(::testing::_))
+            .WillOnce([this](IBidirectionalTransport::ConnectionHandler handler) {
+                captured_connection_handler_ = std::move(handler);
+            });
         EXPECT_CALL(*bi_directional_transport_mock_, Setup()).WillOnce(::testing::Return(score::Result<void>{}));
         const auto setup_result = transport_->Setup();
         EXPECT_TRUE(setup_result.has_value());
@@ -147,6 +151,7 @@ class SampleHyperVisorTransportTest : public ::testing::Test
     std::unique_ptr<BidirectionalTransportMock> mock_owner_;
     GatewayCoreMock gateway_core_mock_;
     IBidirectionalTransport::MessageHandler captured_handler_;
+    IBidirectionalTransport::ConnectionHandler captured_connection_handler_;
 };
 
 TEST_F(SampleHyperVisorTransportTest, CanBeConstructedWithValidConfiguration)
@@ -163,6 +168,7 @@ TEST_F(SampleHyperVisorTransportTest, IsMemorySharingSupportedReturnsTrue)
 TEST_F(SampleHyperVisorTransportTest, SetupCallsSetMessageHandlerAndSetupOnTransport)
 {
     EXPECT_CALL(*bi_directional_transport_mock_, SetMessageHandler(::testing::_)).Times(1);
+    EXPECT_CALL(*bi_directional_transport_mock_, SetConnectionHandler(::testing::_)).Times(1);
     EXPECT_CALL(*bi_directional_transport_mock_, Setup()).WillOnce(::testing::Return(score::Result<void>{}));
 
     SampleHyperVisorTransport transport(gateway_core_mock_, std::move(mock_owner_));
@@ -177,11 +183,24 @@ TEST_F(SampleHyperVisorTransportTest, SetupReturnsErrorWhenTransportSetupFails)
     // when the BidirectionalTransport's Setup method returns a connection failure error
 
     EXPECT_CALL(*bi_directional_transport_mock_, SetMessageHandler(::testing::_)).Times(1);
+    EXPECT_CALL(*bi_directional_transport_mock_, SetConnectionHandler(::testing::_)).Times(1);
     EXPECT_CALL(*bi_directional_transport_mock_, Setup())
         .WillOnce(::testing::Return(score::MakeUnexpected(TransportErrorc::kConnectionFailure)));
     const auto result = transport_->Setup();
     // then calling Setup on SampleHyperVisorTransport should return an error
     EXPECT_FALSE(result.has_value());
+}
+
+TEST_F(SampleHyperVisorTransportTest, ConnectionEstablishedCallsOnRemoteGatewayConnectedOnGatewayCore)
+{
+    // Given a SampleHyperVisorTransport, which has been set up
+    this->WithASampleHyperVisorTransport().WithARegisteredOnSetupCallback();
+
+    // then the gateway core is informed about the (re-)established connection
+    EXPECT_CALL(gateway_core_mock_, OnRemoteGatewayConnected()).Times(1);
+
+    // when the BidirectionalTransport reports an established connection
+    captured_connection_handler_();
 }
 
 TEST_F(SampleHyperVisorTransportTest, ShutdownCallsShutdownOnTransport)
