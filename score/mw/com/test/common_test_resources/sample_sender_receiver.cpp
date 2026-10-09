@@ -23,6 +23,7 @@
 #include <optional>
 
 #include <unistd.h>
+#include <array>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -51,11 +52,13 @@ std::ostream& operator<<(std::ostream& stream, const InstanceSpecifier& instance
 template <typename T>
 void ToStringImpl(std::ostream& o, const T& t)
 {
+    // String literals are streamed through this generic helper; operator<<(ostream&, const char*) requires the decay.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay)
     o << t;
 }
 
 template <typename T, typename... Args>
-void ToStringImpl(std::ostream& o, const T& t, Args... args)
+void ToStringImpl(std::ostream& o, const T& t, const Args&... args)
 {
     ToStringImpl(o, t);
     ToStringImpl(o, args...);
@@ -71,11 +74,9 @@ std::string ToString(const Args&... args)
 
 void HashArray(const std::array<LaneIdType, 16U>& array, std::size_t& seed)
 {
-    const std::ptrdiff_t buffer_size =
-        reinterpret_cast<const std::uint8_t*>(&*array.cend()) - reinterpret_cast<const std::uint8_t*>(&*array.cbegin());
-    SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD(buffer_size > 0);
-    seed = score::cpp::hash_bytes_fnv1a(
-        static_cast<const void*>(array.data()), static_cast<std::size_t>(buffer_size), seed);
+    const std::size_t buffer_size = array.size() * sizeof(LaneIdType);
+    SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD(buffer_size > 0U);
+    seed = score::cpp::hash_bytes_fnv1a(static_cast<const void*>(array.data()), buffer_size, seed);
 }
 
 class MmanMock : public os::Mman
@@ -104,7 +105,7 @@ class MmanMock : public os::Mman
                                                            const os::Stat::Mode mode) const noexcept override
     {
         // shm_open calls are INTERESTING for this test - we memorize the pathname - and then forward
-        std::strcpy(last_shm_open_path_, pathname);
+        std::strcpy(last_shm_open_path_.data(), pathname);
         shm_open_callcount_++;
         return utils::StaticDestructionGuard<os::internal::MmanImpl>::GetStorage().shm_open(pathname, oflag, mode);
     };
@@ -141,18 +142,18 @@ class MmanMock : public os::Mman
 
     const char* GetLastShmOpenPath() const noexcept
     {
-        return last_shm_open_path_;
+        return last_shm_open_path_.data();
     }
 
   private:
-    mutable char last_shm_open_path_[1024];
-    mutable std::uint32_t shm_open_callcount_;
+    mutable std::array<char, 1024> last_shm_open_path_{};
+    mutable std::uint32_t shm_open_callcount_{0U};
 };
 
 class SampleReceiver
 {
   public:
-    SampleReceiver(const score::mw::com::InstanceSpecifier& instance_specifier)
+    explicit SampleReceiver(const score::mw::com::InstanceSpecifier& instance_specifier)
         : instance_specifier_{instance_specifier}, last_received_{}, received_{0U}
     {
     }
@@ -245,7 +246,7 @@ score::result::Error MakeError(const TestErrorCode code, const std::string_view 
 class TestDestructor
 {
   public:
-    TestDestructor(score::cpp::stop_source& stop_source) : stop_source_{stop_source} {}
+    explicit TestDestructor(score::cpp::stop_source& stop_source) : stop_source_{stop_source} {}
     TestDestructor(const TestDestructor&) = delete;
     TestDestructor& operator=(const TestDestructor&) = delete;
     TestDestructor(TestDestructor&&) = delete;
@@ -265,7 +266,7 @@ bool ElementFqIdMatchesConfigurationValue(
     const score::mw::com::impl::lola::ElementFqId element_fq_id_from_config) noexcept
 {
     auto* const binding = impl::ProxyEventView<SampleType>{proxy_event}.GetBinding();
-    auto* const lola_binding = dynamic_cast<impl::lola::ProxyEvent<SampleType>*>(binding);
+    auto* const lola_binding = dynamic_cast<impl::lola::ProxyEvent*>(binding);
     if (lola_binding == nullptr)
     {
         return {};
@@ -369,11 +370,11 @@ score::Result<HandleType> GetHandleFromSpecifier(const InstanceSpecifier& instan
             return MakeUnexpected<HandleType>(std::move(handles_result.error()));
         }
         handles = std::move(handles_result).value();
-        if (handles.size() == 0)
+        if (handles.empty())
         {
             std::this_thread::sleep_for(500ms);
         }
-    } while (handles.size() == 0);
+    } while (handles.empty());
 
     std::cout << ToString(instance_specifier, ": Found service, instantiating proxy\n");
     return handles.front();
@@ -827,9 +828,9 @@ int EventSenderReceiver::RunAsProxyCheckValuesCreatedFromConfig(
                   << ". Failed with error: " << handle_result.error() << ", bailing!\n";
         return EXIT_FAILURE;
     }
-    auto handle = handle_result.value();
+    const auto& handle = handle_result.value();
 
-    auto proxy_result = BigDataProxy::Create(std::move(handle));
+    auto proxy_result = BigDataProxy::Create(handle);
     if (!proxy_result.has_value())
     {
         std::cerr << "Unable to construct BigDataProxy: " << proxy_result.error() << ", bailing!\n";
@@ -896,9 +897,9 @@ int EventSenderReceiver::RunAsProxyReceiveHandlerOnly(const score::mw::com::Inst
                   << ". Failed with error: " << handle_result.error() << ", bailing!\n";
         return EXIT_FAILURE;
     }
-    auto handle = handle_result.value();
+    const auto& handle = handle_result.value();
 
-    auto proxy_result = BigDataProxy::Create(std::move(handle));
+    auto proxy_result = BigDataProxy::Create(handle);
     if (!proxy_result.has_value())
     {
         std::cerr << "Unable to construct BigDataProxy: " << proxy_result.error() << ", bailing!\n";
@@ -976,9 +977,9 @@ int EventSenderReceiver::RunAsProxyCheckEventSlots(const score::mw::com::Instanc
                   << ". Failed with error: " << handle_result.error() << ", bailing!\n";
         return EXIT_FAILURE;
     }
-    auto handle = handle_result.value();
+    const auto& handle = handle_result.value();
 
-    auto proxy_result = BigDataProxy::Create(std::move(handle));
+    auto proxy_result = BigDataProxy::Create(handle);
     if (!proxy_result.has_value())
     {
         std::cerr << "Unable to construct BigDataProxy: " << proxy_result.error() << ", bailing!\n";
@@ -1059,9 +1060,9 @@ int EventSenderReceiver::RunAsProxyCheckSubscribeHandler(const score::mw::com::I
                   << ". Failed with error: " << handle_result.error() << ", bailing!\n";
         return EXIT_FAILURE;
     }
-    auto handle = handle_result.value();
+    const auto& handle = handle_result.value();
 
-    auto proxy_result = BigDataProxy::Create(std::move(handle));
+    auto proxy_result = BigDataProxy::Create(handle);
     if (!proxy_result.has_value())
     {
         std::cerr << "Unable to construct BigDataProxy: " << proxy_result.error() << ", bailing!\n";

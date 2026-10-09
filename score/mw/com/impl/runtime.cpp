@@ -34,13 +34,13 @@
 namespace
 {
 
-inline void warn_double_init()
+void warn_double_init()
 {
     score::mw::log::LogWarn("lola") << "score::mw::com::impl::Runtime is already initialized! Redundant call to a "
                                        "Runtime::Initialize() overload within production code needs to be checked.";
 }
 
-inline void error_double_init()
+void error_double_init()
 {
     score::mw::log::LogError("lola")
         << "score::mw::com::impl::Runtime is already initialized and locked! Redundant call to a "
@@ -133,21 +133,21 @@ void Runtime::Initialize(const runtime::RuntimeConfiguration& runtime_configurat
     score::cpp::ignore = initialization_config_.emplace(std::move(config));
 }
 
-Result<void> Runtime::InitializeRuntimeAddonConfiguration(const runtime::RuntimeConfiguration& runtime_configuration)
+Result<void> Runtime::AddConfiguration(const runtime::RuntimeConfiguration& runtime_configuration)
 {
     auto config = configuration::Parse(runtime_configuration.GetConfigurationPath().Native());
 
     return HandleAddonConfiguration(config);
 }
 
-Result<void> Runtime::InitializeRuntimeAddonConfiguration(score::json::Any json)
+Result<void> Runtime::AddConfiguration(score::json::Any json)
 {
     auto config = configuration::Parse(std::move(json));
 
     return HandleAddonConfiguration(config);
 }
 
-Result<void> Runtime::HandleAddonConfiguration(const Configuration& config) noexcept
+Result<void> Runtime::HandleAddonConfiguration(const Configuration& config)
 {
     // TODO This check is not complete and should be extended
     if (config.GetGlobalConfiguration().GetApplicationId().has_value())

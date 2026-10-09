@@ -21,7 +21,7 @@ rust_library(
     deps = [
         "//score/mw/com/example/com-api-example/com-api-gen",
         "//score/mw/com/rust:score_com",
-        "@score_baselibs//src/log/score_log",
+        "@score_baselibs//score/log_rust/score_log",
         "@score_communication_crate_index//:clap",
         "@score_communication_crate_index//:futures",
     ],
@@ -42,8 +42,8 @@ rust_binary(
         ":com-api-example-lib",
         "//score/mw/com/example/com-api-example/com-api-gen",
         "//score/mw/com/rust:score_com",
-        "@score_baselibs//src/log/score_log",
-        "@score_baselibs//src/log/stdout_logger",
+        "@score_baselibs//score/log_rust/score_log",
+        "@score_baselibs//score/log_rust/stdout_logger",
         "@score_communication_crate_index//:clap",
         "@score_communication_crate_index//:futures",
     ],
@@ -54,7 +54,17 @@ rust_test(
     srcs = ["tests_using_tokio_runtime.rs"],
     data = ["etc/mw_com_config.json"],
     features = ["link_std_cpp_lib"],
-    tags = ["manual"],
+    # https://github.com/eclipse-score/communication/issues/794
+    # Linux only, and disabled under sanitizers, until the findings in the Tokio multi-thread runtime are resolved.
+    # The tests pass functionally, but sanitizer runs fail:
+    #  - --config=asan_ubsan_lsan: LeakSanitizer reports leaks from tokio::runtime::scheduler::multi_thread::MultiThread::new
+    #  - --config=tsan_ubsan: data race in <String as Clone>::clone between the test thread and a tokio-rt-worker thread
+    # QNX: socket2 0.6.5 fails to build (unresolved import libc::TCP_KEEPIDLE),
+    # see https://github.com/eclipse-score/communication/issues/1278
+    target_compatible_with = ["@platforms//os:linux"] + select({
+        "@score_cpp_policies//sanitizers/flags:any_sanitizer": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//score/mw/com/example/com-api-example/com-api-gen",
         "//score/mw/com/rust:score_com",

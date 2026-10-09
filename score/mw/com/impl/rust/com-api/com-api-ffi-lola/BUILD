@@ -27,6 +27,7 @@ cc_library(
         "//score/mw/com:types",
         "//score/mw/com/impl/plumbing:sample_ptr",
         "@score_baselibs//score/language/futurecpp",
+        "@score_baselibs//score/string_manipulation/arguments",
     ],
 )
 
@@ -68,6 +69,6 @@ rust_library(
     deps = [
         ":bridge_ffi_rs",
         "//score/mw/com/impl/plumbing/rust:sample_ptr_rs",
-        "@score_baselibs//src/log/score_log",
+        "@score_baselibs//score/log_rust/score_log",
     ],
 )

@@ -19,6 +19,7 @@
 #include "score/mw/com/impl/bindings/lola/methods/offered_state_machine.h"
 #include "score/mw/com/impl/bindings/lola/methods/proxy_method_instance_identifier.h"
 #include "score/mw/com/impl/bindings/lola/partial_restart_path_builder.h"
+#include "score/mw/com/impl/bindings/lola/proxy_event.h"
 #include "score/mw/com/impl/bindings/lola/proxy_instance_identifier.h"
 #include "score/mw/com/impl/bindings/lola/service_data_control.h"
 #include "score/mw/com/impl/bindings/lola/service_data_storage.h"
@@ -114,13 +115,13 @@ using memory::DataTypeSizeInfo;
 std::unique_ptr<score::memory::shared::FlockMutexAndLock<score::memory::shared::SharedFlockMutex>>
 PlaceSharedLockOnUsageMarkerFileWithRetry(memory::shared::LockFile& service_instance_usage_marker_file,
                                           std::string_view file_path,
-                                          std::uint8_t max_retries)
+                                          std::uint32_t max_retries)
 {
     auto service_instance_usage_mutex_and_lock =
         std::make_unique<score::memory::shared::FlockMutexAndLock<score::memory::shared::SharedFlockMutex>>(
             service_instance_usage_marker_file);
     constexpr std::chrono::milliseconds kRetryBackoffTime{200U};
-    std::uint8_t retry_counter{0U};
+    std::uint32_t retry_counter{0U};
 
     // We use while true and manually break within the loop to prevent sleeping an additional time in case retry_counter
     // exceeds max_retries.
@@ -223,7 +224,7 @@ ServiceDataControl& GetServiceDataControl(const memory::shared::ManagedMemoryRes
 score::Result<void> ExecutePartialRestartLogic(const QualityType quality_type,
                                                const SkeletonInstanceIdentifier skeleton_instance_identifier,
                                                const memory::shared::ManagedMemoryResource& control,
-                                               const memory::shared::ManagedMemoryResource& data) noexcept
+                                               const memory::shared::ManagedMemoryResource& data)
 {
     auto& service_data_storage = detail_proxy::GetServiceDataStorage(data);
 
@@ -231,7 +232,7 @@ score::Result<void> ExecutePartialRestartLogic(const QualityType quality_type,
 
     // The transaction log is identified by the application's unique identifier, which is either the configured
     // 'applicationID' or the process UID as a fallback.
-    const TransactionLogId transaction_log_id{static_cast<TransactionLogId>(lola_runtime.GetApplicationId())};
+    const TransactionLogId transaction_log_id{lola_runtime.GetApplicationId()};
     auto& service_data_control = GetServiceDataControl(control);
     TransactionLogRollbackExecutor transaction_log_rollback_executor{service_data_control,
                                                                      skeleton_instance_identifier,
@@ -275,7 +276,7 @@ void AppendEnabledMethodIdsAndQueueSizes(
         SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD_MESSAGE(
             method_deployment.queue_size_.has_value(),
             "Method instance deployment must contain queue_size on proxy side!");
-        result.emplace_back(unique_method_identifier, method_deployment.queue_size_.value());
+        std::ignore = result.emplace_back(unique_method_identifier, method_deployment.queue_size_.value());
     }
 }
 
@@ -308,7 +309,7 @@ void AppendEnabledFieldIdsAndQueueSizes(
                 continue;
             }
 
-            result.emplace_back(unique_method_identifier, kFieldMethodQueueSize);
+            std::ignore = result.emplace_back(unique_method_identifier, kFieldMethodQueueSize);
         }
     }
 }
@@ -356,7 +357,7 @@ std::unique_ptr<Proxy> Proxy::Create(const HandleType& handle)
     const auto& lola_service_deployment = GetLoLaServiceTypeDeployment(handle);
 
     auto service_instance_id = handle.GetInstanceId();
-    const auto lola_service_instance_id = GetServiceInstanceIdBinding<LolaServiceInstanceId>(service_instance_id);
+    const auto& lola_service_instance_id = GetServiceInstanceIdBinding<LolaServiceInstanceId>(service_instance_id);
 
     PartialRestartPathBuilder partial_restart_builder{lola_service_deployment.service_id_};
     const auto service_instance_usage_marker_file_path =
@@ -369,7 +370,7 @@ std::unique_ptr<Proxy> Proxy::Create(const HandleType& handle)
         return nullptr;
     }
 
-    constexpr std::uint8_t kMaxFlockRetries{3U};
+    constexpr std::uint32_t kMaxFlockRetries{3U};
     auto service_instance_usage_mutex_and_lock =
         PlaceSharedLockOnUsageMarkerFileWithRetry(service_instance_usage_marker_file.value(),
                                                   std::string_view(service_instance_usage_marker_file_path),
@@ -443,7 +444,7 @@ Proxy::Proxy(std::shared_ptr<memory::shared::ManagedMemoryResource> control,
       quality_type_{quality_type},
       event_name_to_element_fq_id_converter_{std::move(event_name_to_element_fq_id_converter)},
       handle_{std::move(handle)},
-      event_bindings_{},
+      proxy_events_{},
       proxy_event_registration_mutex_{},
       is_service_instance_available_{false},
       service_instance_usage_marker_file_{std::move(service_instance_usage_marker_file)},
@@ -475,7 +476,7 @@ Proxy::~Proxy()
 
 void Proxy::ServiceAvailabilityChangeHandler(const bool is_service_available)
 {
-    for (auto& event_binding : event_bindings_)
+    for (auto& event_binding : proxy_events_)
     {
         event_binding.second.get().NotifyServiceInstanceChangedAvailability(is_service_available, GetSourcePid());
     }
@@ -622,6 +623,30 @@ TransactionLogSet& Proxy::GetTransactionLogSet(const ElementFqId element_fq_id)
         std::terminate();
     }
     return event_entry->second.transaction_log_set_;
+}
+
+const EventDataStorage& Proxy::GetEventDataStorage(const ElementFqId element_fq_id) const
+{
+    SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(
+        data_ != nullptr, "Proxy::GetEventDataStorage: Managed memory data pointer is Null");
+    auto& service_data_storage = detail_proxy::GetServiceDataStorage(*data_);
+    auto* const event_entry = service_data_storage.events_.find(element_fq_id);
+    if (event_entry == service_data_storage.events_.end())
+    {
+        score::mw::log::LogFatal("lola") << __func__ << __LINE__
+                                         << "Unable to find data storage for given event instance. Terminating.";
+        SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(false,
+                                                          "Unable to find data storage for given event instance.");
+    }
+    // Suppress "AUTOSAR C++14 A5-3-2" rule finding. This rule declares: "Null pointers shall not be dereferenced.".
+    // The "event_entry" variable is an iterator of interprocess map returned by the "find" method.
+    // A check is made that the iterator is not equal to map.end(). Therefore, the call to "event_entry->"
+    // does not return nullptr.
+    // coverity[autosar_cpp14_a5_3_2_violation]
+    const auto* event_data_storage_ptr = event_entry->second.get();
+    SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD_MESSAGE(event_data_storage_ptr != nullptr,
+                                                "Could not get EventDataStorage from OffsetPtr");
+    return *event_data_storage_ptr;
 }
 
 // Suppress "AUTOSAR C++14 A15-5-3" rule findings. This rule states: "The std::terminate() function shall not be called
@@ -921,14 +946,13 @@ pid_t Proxy::GetSourcePid() const noexcept
     return service_data_storage.skeleton_pid_;
 }
 
-void Proxy::RegisterEvent(const std::string_view service_element_name,
-                          ProxyEventBindingBase& proxy_event_binding) noexcept
+void Proxy::RegisterEvent(const std::string_view service_element_name, ProxyEvent& proxy_event) noexcept
 {
     std::lock_guard lock{proxy_event_registration_mutex_};
-    const auto insert_result = event_bindings_.emplace(service_element_name, proxy_event_binding);
+    const auto insert_result = proxy_events_.emplace(service_element_name, proxy_event);
     SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD_MESSAGE(insert_result.second,
                                                 "Failed to insert proxy event binding into event binding map.");
-    proxy_event_binding.NotifyServiceInstanceChangedAvailability(is_service_instance_available_, GetSourcePid());
+    proxy_event.NotifyServiceInstanceChangedAvailability(is_service_instance_available_, GetSourcePid());
 }
 
 void Proxy::RegisterMethod(const UniqueMethodIdentifier method_id, ProxyMethod& proxy_method) noexcept
@@ -965,7 +989,7 @@ void Proxy::FinalizeDeinitialize()
 
     {
         std::lock_guard lock{proxy_event_registration_mutex_};
-        event_bindings_.clear();
+        proxy_events_.clear();
         is_service_instance_available_ = false;
     }
     {
