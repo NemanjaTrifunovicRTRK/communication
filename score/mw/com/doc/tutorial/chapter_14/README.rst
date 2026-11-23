@@ -109,28 +109,13 @@ Step 1: Implement the transport layer for your hypervisor
 
 
 The transport layer is the part that depends on your platform. It implements the abstract class ``Transport`` from
-`transport_layer/transport.h <https://github.com/eclipse-score/communication/blob/main/score/mw/com/gateway/transport_layer/transport.h>`__.
-In short:
+`transport_layer/transport.h <https://github.com/eclipse-score/communication/blob/main/score/mw/com/gateway/transport_layer/transport.h>`__:
 
-.. code-block:: cpp
-
-   class Transport
-   {
-     public:
-       virtual bool IsMemorySharingSupported() const = 0;
-       virtual score::Result<void> Setup() = 0;
-       virtual void Shutdown() = 0;
-
-       // Called on the source gateway, to be forwarded to the destination gateway.
-       virtual score::Result<void> ProvideService(InstanceSpecifier, std::vector<EventInfo>) = 0;
-       virtual score::Result<void> OfferService(InstanceSpecifier) = 0;
-       virtual score::Result<void> StopOfferService(InstanceSpecifier) = 0;
-       virtual score::Result<void> NotifyUpdate(InstanceSpecifier, impl::ServiceElementType, std::string) = 0;
-
-       // Called on the destination gateway, to be forwarded to the source gateway.
-       virtual score::Result<void> RegisterUpdateNotification(InstanceSpecifier, impl::ServiceElementType, std::string) = 0;
-       virtual score::Result<void> UnregisterUpdateNotification(InstanceSpecifier, impl::ServiceElementType, std::string) = 0;
-   };
+.. literalinclude:: ../../../gateway/transport_layer/transport.h
+   :language: cpp
+   :start-after: [gateway-transport-interface-start]
+   :end-before: [gateway-transport-interface-end]
+   :caption: score/mw/com/gateway/transport_layer/transport.h
 
 Your implementation has two jobs:
 
@@ -204,7 +189,8 @@ shut the gateway down cleanly:
 
 .. literalinclude:: gateway_application_main.cpp
    :language: cpp
-   :lines: 27-34
+   :start-after: [gateway-main-arguments-and-signals-start]
+   :end-before: [gateway-main-arguments-and-signals-end]
    :caption: gateway_application_main.cpp
 
 
@@ -215,7 +201,8 @@ and skeletons, and both need the deployment information from that configuration.
 
 .. literalinclude:: gateway_application_main.cpp
    :language: cpp
-   :lines: 36-42
+   :start-after: [gateway-main-init-runtime-start]
+   :end-before: [gateway-main-init-runtime-end]
    :caption: gateway_application_main.cpp
 
 
@@ -228,7 +215,8 @@ RunGatewayApplication()
 
 .. literalinclude:: gateway_application_runner.cpp
    :language: cpp
-   :lines: 42-43
+   :start-after: [gateway-runner-create-start]
+   :end-before: [gateway-runner-create-end]
    :caption: gateway_application_runner.cpp
 
 
@@ -244,7 +232,8 @@ Starting the gateway takes two calls, and their order matters:
 
 .. literalinclude:: gateway_application_runner.cpp
    :language: cpp
-   :lines: 45-57
+   :start-after: [gateway-runner-setup-and-start-start]
+   :end-before: [gateway-runner-setup-and-start-end]
    :caption: gateway_application_runner.cpp
 
 
@@ -253,12 +242,14 @@ waits until the signal handler requests a shutdown:
 
 .. literalinclude:: gateway_application_runner.cpp
    :language: cpp
-   :lines: 27-38
+   :start-after: [gateway-runner-shutdown-signal-start]
+   :end-before: [gateway-runner-shutdown-signal-end]
    :caption: gateway_application_runner.cpp
 
 .. literalinclude:: gateway_application_runner.cpp
    :language: cpp
-   :lines: 59-67
+   :start-after: [gateway-runner-wait-start]
+   :end-before: [gateway-runner-wait-end]
    :caption: gateway_application_runner.cpp
 
 

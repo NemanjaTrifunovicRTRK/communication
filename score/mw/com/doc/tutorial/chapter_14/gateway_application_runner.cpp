@@ -24,6 +24,7 @@
 namespace score::mw::com::gateway
 {
 
+// [gateway-runner-shutdown-signal-start]
 namespace
 {
 std::atomic<bool> g_running{true};
@@ -36,12 +37,16 @@ void SignalHandler(int /*signal*/) noexcept
     g_running.store(false, std::memory_order_relaxed);
     g_shutdown_cv.notify_one();
 }
+// [gateway-runner-shutdown-signal-end]
 
 void RunGatewayApplication(const std::string& config_path)
 {
+    // [gateway-runner-create-start]
     auto app_configuration = ParseGatewayConfig(config_path);
     GatewayApplication gateway_app{std::move(app_configuration)};
+    // [gateway-runner-create-end]
 
+    // [gateway-runner-setup-and-start-start]
     const auto setup_result = gateway_app.Setup();
     if (!setup_result.has_value())
     {
@@ -55,7 +60,9 @@ void RunGatewayApplication(const std::string& config_path)
         score::mw::log::LogError() << "Gateway application failed to start: " << start_result.error();
         return;
     }
+    // [gateway-runner-setup-and-start-end]
 
+    // [gateway-runner-wait-start]
     score::mw::log::LogInfo() << "Gateway application started. Press Ctrl+C to stop.";
 
     std::unique_lock<std::mutex> lock{g_shutdown_mutex};
@@ -65,6 +72,7 @@ void RunGatewayApplication(const std::string& config_path)
     }
 
     score::mw::log::LogInfo() << "Gateway application shutting down.";
+    // [gateway-runner-wait-end]
 }
 
 }  // namespace score::mw::com::gateway

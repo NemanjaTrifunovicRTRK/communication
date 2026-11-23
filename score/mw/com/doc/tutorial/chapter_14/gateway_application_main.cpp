@@ -24,6 +24,7 @@
 
 int main(int argc, char* argv[])
 {
+    // [gateway-main-arguments-and-signals-start]
     if (argc != 3)
     {
         score::mw::log::LogError() << "Usage: gateway_application_bin <mw_com_config-path> <gateway-config-path>";
@@ -32,7 +33,9 @@ int main(int argc, char* argv[])
 
     std::signal(SIGINT, score::mw::com::gateway::SignalHandler);
     std::signal(SIGTERM, score::mw::com::gateway::SignalHandler);
+    // [gateway-main-arguments-and-signals-end]
 
+    // [gateway-main-init-runtime-start]
     const score::cpp::span<char*> args{argv, static_cast<std::size_t>(argc)};
     const std::string mw_com_config_path = args[1];
     const std::string gateway_config_path = args[2];
@@ -40,6 +43,7 @@ int main(int argc, char* argv[])
         score::mw::com::runtime::RuntimeConfiguration{score::filesystem::Path{mw_com_config_path}});
 
     score::mw::com::gateway::RunGatewayApplication(gateway_config_path);
+    // [gateway-main-init-runtime-end]
 
     return 0;
 }
