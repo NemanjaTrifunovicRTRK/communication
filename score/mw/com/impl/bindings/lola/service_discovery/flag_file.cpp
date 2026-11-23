@@ -1,5 +1,5 @@
 /********************************************************************************
- * Copyright (c) 2025 Contributors to the Eclipse Foundation
+ * Copyright (c) 2025, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -26,20 +26,6 @@ namespace score::mw::com::impl::lola
 {
 namespace
 {
-// Suppress "AUTOSAR C++14 A16-0-1" rule findings. This rule stated: "The pre-processor shall only be used for
-// unconditional and conditional file inclusion and include guards, and using the following directives: (1) #ifndef,
-// #ifdef, (3) #if, (4) #if defined, (5) #elif, (6) #else, (7) #define, (8) #endif, (9) #include.".
-// Checks whether we run over QNX or linux to choose the appropriate path.
-// coverity[autosar_cpp14_a16_0_1_violation]
-#ifdef __QNXNTO__
-// Deviation of MISRA RULE-6-7-2: codeql::misra_deviation_next_line(immutable-non-constexpr-constant)
-const filesystem::Path TMP_PATH{"/tmp_discovery/mw_com_lola/service_discovery"};
-// coverity[autosar_cpp14_a16_0_1_violation]
-#else
-// Deviation of MISRA RULE-6-7-2: codeql::misra_deviation_next_line(immutable-non-constexpr-constant)
-const filesystem::Path TMP_PATH{"/tmp/mw_com_lola/service_discovery"};
-// coverity[autosar_cpp14_a16_0_1_violation]
-#endif
 
 constexpr os::Stat::Mode ALL_PERMISSIONS{os::Stat::Mode::kReadWriteExecUser | os::Stat::Mode::kReadWriteExecGroup |
                                          os::Stat::Mode::kReadWriteExecOthers};
@@ -146,6 +132,13 @@ auto GetQualityTypeString(QualityType quality_type) noexcept -> std::string_view
 
 auto GetSearchPathForIdentifier(const EnrichedInstanceIdentifier& enriched_instance_identifier) -> filesystem::Path
 {
+// path variables are made static to not have to construct them on every call
+#ifdef __QNXNTO__
+    static const filesystem::Path TMP_PATH{"/tmp_discovery/mw_com_lola/service_discovery"};
+#else
+    static const filesystem::Path TMP_PATH{"/tmp/mw_com_lola/service_discovery"};
+#endif
+
     const auto service_id =
         enriched_instance_identifier.GetBindingSpecificServiceId<LolaServiceTypeDeployment>().value();
     auto search_path = TMP_PATH / std::to_string(static_cast<std::uint32_t>(service_id));
@@ -229,7 +222,13 @@ FlagFile::FlagFile(FlagFile&& other) noexcept
 
 auto FlagFile::Exists(const EnrichedInstanceIdentifier& enriched_instance_identifier) -> bool
 {
-    return !GetMatchingFlagFilePaths(enriched_instance_identifier).empty();
+    return !GetMatchingPaths(enriched_instance_identifier).empty();
+}
+
+auto FlagFile::GetMatchingPaths(const EnrichedInstanceIdentifier& enriched_instance_identifier)
+    -> std::vector<filesystem::Path>
+{
+    return GetMatchingFlagFilePaths(enriched_instance_identifier);
 }
 
 // Suppress "AUTOSAR C++14 A15-5-3" rule findings. This rule states: "The std::terminate() function shall not be called
@@ -257,11 +256,25 @@ auto FlagFile::CreateSearchPath(const EnrichedInstanceIdentifier& enriched_insta
         const Result<filesystem::FileStatus> status = filesystem.standard->Status(path);
         if (status.has_value())
         {
-            if ((status.value().Type() == filesystem::FileType::kDirectory) &&
-                (status.value().Permissions() == ALL_PERMISSIONS))
+            if (status.value().Type() == filesystem::FileType::kDirectory)
             {
-                result = Result<void>{};
-                break;
+                if (status.value().Permissions() == ALL_PERMISSIONS)
+                {
+                    result = Result<void>{};
+                    break;
+                }
+
+                // A creator may have died after mkdir applied its umask but before setting the required permissions.
+                const auto permission_result = filesystem.standard->Permissions(
+                    path, ALL_PERMISSIONS, filesystem::PermOptions::kReplace | filesystem::PermOptions::kNoFollow);
+                if (permission_result.has_value())
+                {
+                    mw::log::LogInfo("lola") << "Completed permissions on existing offer path" << path;
+                    result = Result<void>{};
+                    break;
+                }
+                mw::log::LogError("lola")
+                    << "Failed to complete permissions on offer path" << path << ":" << permission_result.error();
             }
         }
 

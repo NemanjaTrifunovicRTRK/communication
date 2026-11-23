@@ -259,7 +259,7 @@ class SkeletonWrapperClass : public Interface<SkeletonTrait>
     }
 
     SkeletonWrapperClass(const SkeletonWrapperClass&) = delete;
-    SkeletonWrapperClass& operator=(const SkeletonWrapperClass&) = delete;
+    SkeletonWrapperClass& operator=(const SkeletonWrapperClass&) & = delete;
 
     SkeletonWrapperClass(SkeletonWrapperClass&& other) noexcept
         : Interface<SkeletonTrait>{std::move(static_cast<Interface<SkeletonTrait>&&>(other))},
@@ -267,7 +267,7 @@ class SkeletonWrapperClass : public Interface<SkeletonTrait>
     {
     }
 
-    SkeletonWrapperClass& operator=(SkeletonWrapperClass&& other) noexcept
+    SkeletonWrapperClass& operator=(SkeletonWrapperClass&& other) & noexcept
     {
         if (&other != this)
         {
@@ -319,9 +319,11 @@ class SkeletonWrapperClass : public Interface<SkeletonTrait>
 };
 template <template <class> class Interface>
 std::optional<std::unordered_map<InstanceSpecifier, std::queue<Result<SkeletonWrapperClass<Interface>>>>>
+    // Deviation of MISRA RULE-6-7-2: codeql::misra_deviation_next_line(mock-injection-static-pointer)
     SkeletonWrapperClass<Interface>::instance_specifier_creation_results_{};
 template <template <class> class Interface>
 std::optional<std::unordered_map<InstanceIdentifier, std::queue<Result<SkeletonWrapperClass<Interface>>>>>
+    // Deviation of MISRA RULE-6-7-2: codeql::misra_deviation_next_line(mock-injection-static-pointer)
     SkeletonWrapperClass<Interface>::instance_identifier_creation_results_{};
 
 template <template <class> class Interface>
@@ -356,7 +358,7 @@ class ProxyWrapperClass : public Interface<ProxyTrait>
     }
 
     ProxyWrapperClass(const ProxyWrapperClass&) = delete;
-    ProxyWrapperClass& operator=(const ProxyWrapperClass&) = delete;
+    ProxyWrapperClass& operator=(const ProxyWrapperClass&) & = delete;
 
     ProxyWrapperClass(ProxyWrapperClass&& other) noexcept
         : Interface<ProxyTrait>{std::move(static_cast<Interface<ProxyTrait>&&>(other))},
@@ -364,7 +366,7 @@ class ProxyWrapperClass : public Interface<ProxyTrait>
     {
     }
 
-    ProxyWrapperClass& operator=(ProxyWrapperClass&& other) noexcept
+    ProxyWrapperClass& operator=(ProxyWrapperClass&& other) & noexcept
     {
         if (&other != this)
         {
@@ -454,6 +456,7 @@ class ProxyWrapperClass : public Interface<ProxyTrait>
 };
 template <template <class> class Interface>
 std::optional<std::unordered_map<HandleType, std::queue<Result<ProxyWrapperClass<Interface>>>>>
+    // Deviation of MISRA RULE-6-7-2: codeql::misra_deviation_next_line(mock-injection-static-pointer)
     ProxyWrapperClass<Interface>::creation_results_{};
 
 /// \api

@@ -14,9 +14,26 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
+    name = "e2e_event_protection",
+    srcs = ["e2e_event_protection.cpp"],
+    hdrs = ["e2e_event_protection.h"],
+    tags = ["FFI"],
+    visibility = ["//score/mw/com/impl:__subpackages__"],
+    deps = [
+        "//score/mw/com/impl/configuration",
+        "//score/mw/com/impl/e2e:e2e_profile_stub",
+        "//score/mw/com/impl/e2e:e2e_result",
+        "@score_baselibs//score/language/futurecpp",
+    ],
+)
+
+cc_library(
     name = "element_fq_id",
     srcs = ["element_fq_id.cpp"],
     hdrs = ["element_fq_id.h"],
+    implementation_deps = [
+        "@score_baselibs//score/language/safecpp/safe_math",
+    ],
     tags = ["FFI"],
     visibility = [
         "//score/mw/com/impl:__subpackages__",
@@ -31,6 +48,9 @@ cc_library(
     name = "event_data_storage",
     srcs = ["event_data_storage.cpp"],
     hdrs = ["event_data_storage.h"],
+    implementation_deps = [
+        "@score_baselibs//score/language/safecpp/safe_math",
+    ],
     tags = ["FFI"],
     visibility = [
         "//score/mw/com/impl:__subpackages__",
@@ -66,6 +86,9 @@ cc_library(
     name = "sample_allocatee_ptr",
     srcs = ["sample_allocatee_ptr.cpp"],
     hdrs = ["sample_allocatee_ptr.h"],
+    implementation_deps = [
+        "@score_baselibs//score/language/safecpp/safe_math",
+    ],
     tags = ["FFI"],
     visibility = [
         "//score/mw/com/impl:__subpackages__",
@@ -154,6 +177,36 @@ cc_library(
 )
 
 cc_library(
+    name = "proxy",
+    srcs = ["proxy.cpp"],
+    hdrs = ["proxy.h"],
+    tags = ["FFI"],
+    visibility = [
+        "//score/mw/com/impl:__subpackages__",
+    ],
+    deps = [
+        "//score/mw/com/impl:proxy_binding",
+    ],
+)
+
+cc_library(
+    name = "proxy_event",
+    srcs = ["proxy_event.cpp"],
+    hdrs = ["proxy_event.h"],
+    tags = ["FFI"],
+    visibility = [
+        "//score/mw/com/impl:__subpackages__",
+    ],
+    deps = [
+        ":element_fq_id",
+        "//score/mw/com/impl:binding_type",
+        "//score/mw/com/impl:error",
+        "//score/mw/com/impl:proxy_event_binding",
+        "@score_baselibs//score/result",
+    ],
+)
+
+cc_library(
     name = "someip",
     tags = ["FFI"],
     visibility = [
@@ -162,6 +215,8 @@ cc_library(
     deps = [
         ":element_fq_id",
         ":event_data_storage",
+        ":proxy",
+        ":proxy_event",
         ":runtime",
         ":sample_allocatee_ptr",
         ":skeleton",

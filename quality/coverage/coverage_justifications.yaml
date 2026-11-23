@@ -146,3 +146,60 @@ justifications:
       - file: score/mw/com/gateway/transport_layer/qemu/qemu_hypervisor_transport.cpp
         line_start: 356
         line_end: 357
+
+  - id: handle-type-hash-buffer-size-assert
+    category: defensive_programming
+    platforms: [linux, qnx]
+    reason: >
+      ToHashString() always returns a fixed-length string of constexpr size, independent of the id values.
+      So the assertion gives the same result on every call (per compilation), and any test that hashes a
+      HandleType proves it never fails.
+
+  - id: reference-to-moveable-make-unique-nonnull-assert
+    category: defensive_programming
+    platforms: [linux, qnx]
+    reason: >
+      std::make_unique never returns nullptr (it throws std::bad_alloc on allocation failure),
+      so reference_to_moveable_ is always non-null. The assert-failure path is unreachable.
+
+  - id: sample-allocatee-tracker-deallocate-underflow-assert
+    category: defensive_programming
+    platforms: [linux, qnx]
+    reason: >
+      Defensive underflow check in SampleAllocateeTracker::Deallocate(). Deallocate() is only
+      called via a SampleAllocateeGuard, which is handed out by Allocate() (which first does
+      fetch_add) and deallocates at most once. Thus the pre-decrement value 'previous' is always
+      greater than 0, making the assert-failure path unreachable without violating the guard's
+      allocate/deallocate pairing.
+
+  - id: sample-reference-tracker-available-samples-assert
+    category: defensive_programming
+    platforms: [linux, qnx]
+    reason: >
+      Available_samples_ starts at max_num_samples_ and every deallocation only gives back
+      samples that were previously taken out, so it can never grow above max_num_samples_.
+      The assert-failure path is therefore unreachable.
+
+  - id: proxy-field-dispatch-nonnull-assert
+    category: defensive_programming
+    platforms: [linux, qnx]
+    reason: >
+      In the production ProxyFieldImpl ctor, each Make*IfEnabled helper whose tag is in the pack returns the result
+      of std::make_unique, which never returns nullptr (it throws std::bad_alloc on allocation failure). So every
+      dispatch checked by these asserts is always non-null and the assert-failure paths are unreachable.
+
+  - id: subscribe-state-exhaustive
+    category: defensive_programming
+    platforms: [linux, qnx]
+    reason: >
+      SubscriptionState has exactly three enumerators: kNotSubscribed, kSubscribed and kSubscriptionPending.
+      kNotSubscribed is handled by the preceding branch, so when the else-if is reached the state is always
+      kSubscribed or kSubscriptionPending. The condition can therefore never evaluate to false.
+
+  - id: unsubscribe-binding-nonnull-assert
+    category: defensive_programming
+    platforms: [linux, qnx]
+    reason: >-
+      Unsubscribe() only reaches this assert if is_subscribed_flag_ is set. The flag is only set after Subscribe()
+      has used binding_ (or on the mock path, which returns earlier), and is cleared on move. So binding_ is never
+      null here and the assert-failure path is unreachable.

@@ -108,6 +108,10 @@ Result<void> ProxyEventBase::Subscribe(const std::size_t max_sample_count)
             return MakeUnexpected(ComErrc::kMaxSampleCountNotRealizable);
         }
     }
+    else
+    {
+        // Subscription state is not subscribable or re-subscribable: nothing to do.
+    }
     is_subscribed_flag_.Set();
     return {};
 }
@@ -130,8 +134,10 @@ void ProxyEventBase::Unsubscribe()
         return;
     }
 
+    // COV_JUSTIFIED_START unsubscribe-binding-nonnull-assert
     SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD_MESSAGE(binding_ != nullptr,
                                                 "binding_ must be set if Subscribe completed successfully.");
+    // COV_JUSTIFIED_STOP
 
     tracing::TraceUnsubscribe(tracing_data_, *binding_);
 

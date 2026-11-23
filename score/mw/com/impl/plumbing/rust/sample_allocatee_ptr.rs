@@ -1,4 +1,4 @@
-/********************************************************************************
+/*******************************************************************************
  * Copyright (c) 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
@@ -6,10 +6,10 @@
  *
  * This program and the accompanying materials are made available under the
  * terms of the Apache License Version 2.0 which is available at
- * https://www.apache.org/licenses/LICENSE-2.0
+ * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * SPDX-License-Identifier: Apache-2.0
- ********************************************************************************/
+ *******************************************************************************/
 
 ///This crate gives same memory layout as SampleAllocateePtr in C++ implementation
 ///It can be used for FFI bindings where SampleAllocateePtr is needed
@@ -17,10 +17,7 @@
 use core::fmt::Debug;
 use std::mem::ManuallyDrop;
 
-use common_rs::{
-    BlankBinding, ConsumerEventDataControlLocalView, CustomDeleter, CxxOptional, ProviderEventDataControlLocalView,
-    SlotIndexType,
-};
+use common_rs::{BlankBinding, ConsumerEventDataControlLocalView, CustomDeleter, CxxOptional, SlotIndexType};
 
 #[repr(C)]
 struct SampleAllocateeTracker {
@@ -43,10 +40,17 @@ union MockBindingVariant<T> {
     _variant: ManuallyDrop<MockBinding<T>>,
 }
 
+/// Opaque, correctly sized/aligned mirror of `lola::ProviderEventDataControlLocalView<>`, which is now stored
+/// by value inside `lola::EventDataControlComposite` (instead of being referenced through a pointer).
+#[repr(C, align(8))]
+struct ProviderEventDataControlLocalViewStorage {
+    _bytes: [u8; 16],
+}
+
 #[repr(C)]
 struct EventDataControlComposite {
-    _asil_qm_control_local_: *mut ProviderEventDataControlLocalView,
-    _asil_b_control_local_: *mut ProviderEventDataControlLocalView,
+    _asil_qm_control_local_: ProviderEventDataControlLocalViewStorage,
+    _asil_b_control_local_: CxxOptional<ProviderEventDataControlLocalViewStorage>,
     _ignore_qm_control_: bool,
 }
 

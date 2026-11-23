@@ -1,0 +1,287 @@
+' *******************************************************************************
+' Copyright (c) 2026 Contributors to the Eclipse Foundation
+'
+' See the NOTICE file(s) distributed with this work for additional
+' information regarding copyright ownership.
+'
+' This program and the accompanying materials are made available under the
+' terms of the Apache License Version 2.0 which is available at
+' https://www.apache.org/licenses/LICENSE-2.0
+'
+' SPDX-License-Identifier: Apache-2.0
+' *******************************************************************************
+@startuml public_api
+skinparam linetype ortho
+
+' This diagram shows the public API of the memory_shared component, i.e. the set of classes,
+' interfaces and supporting types that are actually accessible to a user depending on the
+' cc_library target ":shared" (score/memory/shared/shared_memory_factory.h and
+' score/memory/shared/shared_memory_resource.h, including everything reachable through their
+' public base classes and public operation signatures). Operations are expressed in abstract UML
+' operation syntax (OMG UML 2.5.1), not as a 1:1 copy of the C++ signatures: smart-pointer wrappers
+' are dropped (an operation "returns" an instance of the interface/class), std::optional is
+' expressed via multiplicity "[0..1]", collections via "[0..*]", and primitive C++ types are mapped
+' to their conceptual UML counterpart (std::string -> String, std::size_t / std::uint64_t ->
+' UnsignedInteger, bool -> Boolean, void* -> Pointer).
+'
+' Operations that can report an error at runtime (C++ return type score::cpp::expected<T,
+' score::os::Error> / score::cpp::expected_blank<score::os::Error>) are shown wrapped in the
+' abstracted datatype Result<T> (or the bare Result for the "blank"/no-success-value case) rather
+' than being abstracted away, since the ability to report an error is safety-relevant and needed
+' for the per-operation failure-mode analysis. Result<T>/Result does not model the concrete error
+' type; it merely flags "this operation can fail and reports that failure to the caller" - see the
+' note attached to Result.
+'
+' The diagram is grouped into one package per unit of the memory_shared component (see
+' score/memory/shared/dependability/architectural_design/static_design/overall.puml):
+' - "public API of unit factory_resources": shared_memory_factory.h / shared_memory_resource.h and
+'   everything reachable through their public operation signatures (see above).
+' - "public API of unit allocator_pointer": offset_ptr.h / polymorphic_offset_ptr_allocator.h.
+' - "public API of unit pointer_arithmetic": pointer_arithmetic_util.h. On C++ level these are
+'   free-standing functions (no class); they are aggregated here into a single interface
+'   "PointerArithmeticUtil" (which does not exist as such in the C++ code) purely for the sake of
+'   this diagram and of score/memory/shared/dependability/architectural_design/static_design/
+'   overall.puml - modeling each free function as its own top-level interface there would explode
+'   the diagram's complexity for no architectural benefit.
+
+namespace score::memory::shared {
+
+  package "public API of unit factory_resources" {
+
+    interface ManagedMemoryResource {
+      + getBaseAddress() : Pointer
+      + getUsableBaseAddress() : Pointer
+      + GetUserAllocatedBytes() : UnsignedInteger
+      + IsOffsetPtrBoundsCheckBypassingEnabled() : Boolean
+      + getMemoryResourceProxy() : MemoryResourceProxy
+      + construct<T>(arguments : ArgumentList) : T
+      + destruct<T>(instance : T)
+    }
+
+    note right of ManagedMemoryResource
+      Allocation beyond the available memory terminates the process.
+    end note
+
+    interface ISharedMemoryResource {
+      + getPath() : String [0..1]
+      + UnlinkFilesystemEntry()
+      + GetFileDescriptor() : FileDescriptor
+      + IsShmInTypedMemory() : Boolean
+      + GetIdentifier() : String
+    }
+
+    ISharedMemoryResource --|> ManagedMemoryResource
+
+    class "ISharedMemoryResource::AccessControl" as AccessControl {
+      + permissions : UserPermissions
+      + allowedProviders : UserId [0..*]
+    }
+
+    ISharedMemoryResource +-- AccessControl
+
+    note right of AccessControl
+      allowedProviders (also in Open): absent = no provider check;
+      present = the creator UID of the resource must be the own UID or in the list
+      (empty list = only the own UID is accepted).
+    end note
+
+    interface ISharedMemoryFactory {
+      + Open(path : String, isReadWrite : Boolean, allowedProviders : UserId [0..*]) : ISharedMemoryResource [0..1]
+      + Create(path : String, initializer : InitializeCallback, reservedSize : UnsignedInteger, permissions : UserPermissions, preferTypedMemory : Boolean) : ISharedMemoryResource [0..1]
+      + CreateAnonymous(resourceId : UnsignedInteger, initializer : InitializeCallback, reservedSize : UnsignedInteger, permissions : UserPermissions, preferTypedMemory : Boolean) : ISharedMemoryResource [0..1]
+      + CreateOrOpen(path : String, initializer : InitializeCallback, reservedSize : UnsignedInteger, accessControl : AccessControl, preferTypedMemory : Boolean) : ISharedMemoryResource [0..1]
+      + Remove(path : String)
+      + RemoveStaleArtefacts(path : String)
+      + SetTypedMemoryProvider(provider : TypedMemory)
+      + SetInterVMMemoryProvider(provider : TypedMemory)
+      + GetControlBlockSize() : UnsignedInteger
+      + Clear()
+    }
+
+    note right of ISharedMemoryFactory
+      Failure reaction of Open/Create/CreateAnonymous/CreateOrOpen: expected errors
+      (e.g. object missing or already existing, provider not allowed) return no resource;
+      unexpected OS errors (e.g. sizing, mapping, lock-file timeout) terminate the process.
+    end note
+
+    class SharedMemoryFactory {
+      + {static} Open(path : String, isReadWrite : Boolean, allowedProviders : UserId [0..*]) : ISharedMemoryResource [0..1]
+      + {static} Create(path : String, initializer : InitializeCallback, reservedSize : UnsignedInteger, permissions : UserPermissions, preferTypedMemory : Boolean) : ISharedMemoryResource [0..1]
+      + {static} CreateAnonymous(resourceId : UnsignedInteger, initializer : InitializeCallback, reservedSize : UnsignedInteger, permissions : UserPermissions, preferTypedMemory : Boolean) : ISharedMemoryResource [0..1]
+      + {static} CreateOrOpen(path : String, initializer : InitializeCallback, reservedSize : UnsignedInteger, accessControl : AccessControl, preferTypedMemory : Boolean) : ISharedMemoryResource [0..1]
+      + {static} Remove(path : String)
+      + {static} RemoveStaleArtefacts(path : String)
+      + {static} SetTypedMemoryProvider(provider : TypedMemory)
+      + {static} SetInterVMMemoryProvider(provider : TypedMemory)
+      + {static} GetControlBlockSize() : UnsignedInteger
+      + {static} Clear()
+      + {static} InjectMock(mock : ISharedMemoryFactory)
+      .. InjectMock is a test-support seam allowing all of the above to be redirected to a mock ..
+    }
+
+    SharedMemoryFactory ..> ISharedMemoryFactory : delegates to
+
+    ' Note: the concrete SharedMemoryResource class is intentionally NOT modeled here. Its
+    ' constructors are protected and its static factory methods (Create/CreateAnonymous/
+    ' CreateOrOpen/Open) are private (only accessible to the friend class SharedMemoryFactoryImpl).
+    ' A user of ":shared" can therefore never name or obtain a SharedMemoryResource instance
+    ' directly; they always receive an ISharedMemoryResource handle.
+
+    class MemoryResourceProxy {
+      + MemoryResourceProxy(identifier : UnsignedInteger)
+      + allocate(size : UnsignedInteger, alignment : UnsignedInteger) : Pointer
+      + deallocate(pointer : Pointer, size : UnsignedInteger)
+      + {static} EnableBoundsChecking(enable : Boolean) : Boolean
+    }
+
+    ManagedMemoryResource ..> MemoryResourceProxy : returns
+
+    interface TypedMemory {
+      + {static} Default() : TypedMemory
+      + AllocateNamedTypedMemory(size : UnsignedInteger, name : String, permissions : UserPermissions) : Result
+      + AllocateAndOpenAnonymousTypedMemory(size : UnsignedInteger) : Result<Integer>
+      + Unlink(name : String) : Result
+      + GetCreatorUid(name : String) : Result<UserId>
+    }
+
+    class "Result<T>" as Result <<datatype>>
+
+    note bottom of Result
+      Abstracts score::cpp::expected<T, score::os::Error> (success value of type T)
+      resp. score::cpp::expected_blank<score::os::Error> (no success value, shown as "Result").
+      Marks an operation as fallible: it may report an score::os::Error to the caller
+      instead of / in addition to its nominal result.
+    end note
+
+    TypedMemory ..> Result : reports
+
+    ISharedMemoryFactory ..> TypedMemory : uses
+    SharedMemoryFactory ..> TypedMemory : uses
+    TypedMemory ..> UserPermissions : uses
+
+    class InitializeCallback <<callback>> {
+      .. invoked only for a newly created resource, once it is ready for use ..
+    }
+
+    ISharedMemoryFactory ..> InitializeCallback : uses
+    SharedMemoryFactory ..> InitializeCallback : uses
+
+    interface UserPermissions <<choice>>
+
+    note bottom of UserPermissions
+      {complete, disjoint}
+      A resource is either world-readable, world-writable,
+      or restricted to an explicit set of per-user permissions.
+    end note
+
+    class PermissionMap <<datatype>> {
+      .. maps an access permission (e.g. read/write) to the list of user IDs granted it ..
+    }
+
+    PermissionMap --|> UserPermissions
+
+    namespace permission {
+        class WorldReadable
+        class WorldWritable
+    }
+
+    permission.WorldReadable --|> UserPermissions
+    permission.WorldWritable --|> UserPermissions
+
+    AccessControl --> "1" UserPermissions : permissions
+    ISharedMemoryFactory ..> UserPermissions : uses
+    SharedMemoryFactory ..> UserPermissions : uses
+
+  }
+
+  package "public API of unit allocator_pointer" {
+
+    class "OffsetPtr<T>" as OffsetPtr {
+      + OffsetPtr(pointer : T [0..1])
+      + OffsetPtr<U>(other : OffsetPtr<U>)
+      + {static} pointer_to(reference : T) : OffsetPtr<T>
+      + operator*() : T
+      + operator[](index : Integer) : T
+      + operator+=(offset : Integer) : OffsetPtr<T>
+      + operator-=(offset : Integer) : OffsetPtr<T>
+      + operator++() : OffsetPtr<T>
+      + operator--() : OffsetPtr<T>
+      + get() : T [0..1]
+      + operator pointer() : T [0..1]
+      + operator->() : T [0..1]
+      + {query} operator bool() : Boolean
+      + {query} operator!() : Boolean
+      + {static} EnableOffsetPtrBoundsChecking(enable : Boolean) : Boolean
+    }
+
+    note bottom of OffsetPtr
+      OffsetPtr<T> is a smart, offset-based pointer usable across process boundaries (e.g. in
+      shared memory) that otherwise behaves like a raw T*; it participates in pointer bounds
+      checking. When T = void, additional type-erasure overloads of get() exist to
+      reinterpret the pointed-to memory as an explicit type; omitted here for brevity. See
+      class_diagram_allocator_pointer.puml for the full, non-abstracted signature set.
+      EnableOffsetPtrBoundsChecking is a free function in offset_ptr.h, shown here as {static}.
+      Bounds-check violations terminate the process.
+    end note
+
+    class "PolymorphicOffsetPtrAllocator<T>" as PolymorphicOffsetPtrAllocator {
+      + PolymorphicOffsetPtrAllocator()
+      + PolymorphicOffsetPtrAllocator(resource : ManagedMemoryResource) : PolymorphicOffsetPtrAllocator<T>
+      + PolymorphicOffsetPtrAllocator<U>(other : PolymorphicOffsetPtrAllocator<U>)
+      + allocate(size : UnsignedInteger) : OffsetPtr<T>
+      + deallocate(pointer : OffsetPtr<T>, size : UnsignedInteger)
+      + getMemoryResourceProxy() : OffsetPtr<MemoryResourceProxy>
+    }
+
+    PolymorphicOffsetPtrAllocator *-- "1" OffsetPtr : uses
+
+  }
+
+  package "public API of unit pointer_arithmetic" {
+
+    interface PointerArithmeticUtil <<utility>> {
+      + {static} AddOffsetToPointerAsInteger(pointerAsInteger : UnsignedInteger, offset : UnsignedInteger) : UnsignedInteger
+      + {static} AddSignedOffsetToPointerAsInteger(pointerAsInteger : UnsignedInteger, offset : Integer) : UnsignedInteger
+      + {static} SubtractOffsetFromPointerAsInteger(pointerAsInteger : UnsignedInteger, offset : UnsignedInteger) : UnsignedInteger
+      + {static} CalculateAlignedSize(size : UnsignedInteger, alignment : UnsignedInteger) : UnsignedInteger
+      + {static} CalculateAlignedSizeOfSequence(dataTypeInfos : DataTypeSizeInfo [0..*]) : UnsignedInteger
+      + {static} CastPointerToInteger(pointer : Pointer) : UnsignedInteger
+      + {static} CastIntegerToPointer<PointerType>(integer : UnsignedInteger) : PointerType
+      + {static} AddOffsetToPointer<PointerType>(pointer : PointerType, offset : Integer) : PointerType
+      + {static} PointerToLogValue(pointer : Pointer) : String
+      + {static} SubtractPointersBytes(first : Pointer, second : Pointer) : Integer
+      + {static} AbsoluteValue<SignedInteger>(value : SignedInteger) : UnsignedInteger
+      + {static} UndoSignedToUnsignedIntegerCast<UnsignedInteger>(value : UnsignedInteger) : Integer
+      + {static} AddUnsignedToSigned<SignedInteger>(signedValue : SignedInteger, unsignedValue : UnsignedInteger) : SignedInteger
+      + {static} SubtractUnsignedFromSigned<SignedInteger>(signedValue : SignedInteger, unsignedValue : UnsignedInteger) : SignedInteger
+    }
+
+    note bottom of PointerArithmeticUtil
+      Aggregates the free-standing functions of pointer_arithmetic_util.h into a single
+      interface for this diagram (no such class/interface exists in the C++ code). See
+      class_diagram_pointer_arithmetic.puml for the actual, non-abstracted free-function
+      signatures (modeled there as a <<utility>> class, consistent with this abstraction).
+    end note
+
+  }
+
+  ' Cross-unit relations: allocator_pointer's PolymorphicOffsetPtrAllocator is constructed from
+  ' and dispatches to types provided by factory_resources.
+  PolymorphicOffsetPtrAllocator ..> ManagedMemoryResource : constructed from
+  PolymorphicOffsetPtrAllocator ..> MemoryResourceProxy : references
+
+  ' Cross-unit relations: both factory_resources and allocator_pointer internally use
+  ' pointer_arithmetic's utility functions (e.g. for offset/alignment calculations).
+  ManagedMemoryResource ..> PointerArithmeticUtil : uses
+  MemoryResourceProxy ..> PointerArithmeticUtil : uses
+  OffsetPtr ..> PointerArithmeticUtil : uses
+
+}
+
+package "external types (other components)" {
+    class FileDescriptor <<external>>
+}
+
+ISharedMemoryResource ..> FileDescriptor : uses
+
+@enduml

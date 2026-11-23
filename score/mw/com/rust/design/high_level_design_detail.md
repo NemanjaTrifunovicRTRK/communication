@@ -1,15 +1,16 @@
-<!--
-Copyright (c) 2026 Contributors to the Eclipse Foundation
+<!-- ----------------------------------------------------------------------------
+  Copyright (c) 2026 Contributors to the Eclipse Foundation
 
-See the NOTICE file(s) distributed with this work for additional
-information regarding copyright ownership.
+  See the NOTICE file(s) distributed with this work for additional
+  information regarding copyright ownership.
 
-This program and the accompanying materials are made available under the
-terms of the Apache License Version 2.0 which is available at
-https://www.apache.org/licenses/LICENSE-2.0
+  This program and the accompanying materials are made available under the
+  terms of the Apache License Version 2.0 which is available at
+  https://www.apache.org/licenses/LICENSE-2.0
 
-SPDX-License-Identifier: Apache-2.0
--->
+  SPDX-License-Identifier: Apache-2.0
+----------------------------------------------------------------------------- -->
+
 # COM API — High-Level Design
 
 This document describes the internal architecture, trait hierarchy, module structure, and implementation details of the COM API framework. For an introduction and usage, see [README](../README.md).
@@ -170,7 +171,7 @@ All event data transmitted via IPC must implement the `CommData` trait using der
 When extending the COM API:
 1. **Generic Features**: Add to `score_com_concept` for implementation-agnostic traits
 2. **LoLa Implementation**: Add to `com-api-runtime-lola` for concrete implementation of `score_com_concept` using the MW::COM (LoLa) backend
-3. **Examples**: Update or add to `com-api-example` directory for demonstration code
+3. **Examples**: Update or add to `score/mw/com/doc/tutorial/rust` directory for demonstration code
 
 ### Naming Conventions
 All naming in the COM-API adheres to [Rust Naming Guidelines](https://rust-lang.github.io/api-guidelines/naming.html):

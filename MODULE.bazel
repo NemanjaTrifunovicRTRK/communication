@@ -30,7 +30,7 @@ use_repo(multitool, "actionlint_hub", "multitool")
 bazel_dep(name = "rules_python", version = "1.8.5")
 bazel_dep(name = "rules_rust", version = "0.68.2-score")
 bazel_dep(name = "score_qnx_unit_tests", version = "0.3.0")
-bazel_dep(name = "score_baselibs", version = "0.2.17")
+bazel_dep(name = "score_baselibs", version = "0.2.19")
 single_version_override(
     module_name = "score_baselibs",
     patch_strip = 1,
@@ -40,9 +40,9 @@ single_version_override(
     patches = ["//third_party/score_baselibs:restore_qnx8_poll_workaround.patch"],
 )
 
-bazel_dep(name = "score_bazel_platforms", version = "1.1.0")
+bazel_dep(name = "score_bazel_platforms", version = "1.3.0")
 bazel_dep(name = "score_cpp_policies", version = "0.1.2")
-bazel_dep(name = "score_crates", version = "0.0.13", repo_name = "score_communication_crate_index")
+bazel_dep(name = "score_crates", version = "0.0.15", repo_name = "score_communication_crate_index")
 
 download_archive = use_repo_rule("@download_utils//download/archive:defs.bzl", "download_archive")
 
@@ -53,10 +53,10 @@ download_archive(
     urls = ["https://github.com/python-jsonschema/jsonschema/archive/refs/tags/v4.23.0.tar.gz"],
 )
 
-bazel_dep(name = "score_tooling", version = "3.0.1")
+bazel_dep(name = "score_tooling", version = "3.0.2")
 
 # TRLC dependency for requirements traceability
-bazel_dep(name = "trlc", version = "3.0.1")
+bazel_dep(name = "trlc", version = "3.1.1")
 
 # Dependencies required for development that will not get propagated to our users as transitive dependencies
 bazel_dep(name = "gcc_toolchain", version = "0.13.0", dev_dependency = True)
@@ -254,7 +254,7 @@ llvm.sysroot(
 )
 use_repo(llvm, "llvm_toolchain", "llvm_toolchain_llvm")
 
-bazel_dep(name = "score_toolchains_rust", version = "0.10.0", dev_dependency = True)
+bazel_dep(name = "score_toolchains_rust", version = "0.10.1", dev_dependency = True)
 
 FERROCENE_TOOLCHAIN_BUILDER_URL = "https://github.com/eclipse-score/ferrocene_toolchain_builder/"
 
@@ -390,22 +390,20 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 # (@codeql_coding_standards_compiled). These two must always come from the same
 # release, so their version is defined once here and both derive their download
 # URL from it.
-CODING_STANDARDS_VERSION = "2.62.0"
+CODING_STANDARDS_VERSION = "2.63.0"
 
 # The version of this tool needs to be deduced by the mentioned compatible version of the codeql_coding_standards release!
 http_archive(
     name = "codeql_bundle",
     build_file = "//third_party/codeql:codeql.BUILD",
-    sha256 = "a94f674bb3c23ea5e9a2ad06b64847dd0277b15014d2517ecd9c41c88e6caa65",
-    url = "https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.21.4/codeql-bundle-linux64.tar.gz",
+    sha256 = "0e3045fecbc325ebca368fc5536b04dc4f9b0cebf83bc412e4c8a78bc0a9fc43",
+    url = "https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.23.9/codeql-bundle-linux64.tar.gz",
 )
 
 http_archive(
     name = "codeql_coding_standards",
     build_file = "//third_party/codeql:codeql_coding_standards.BUILD",
-    patch_args = ["-p1"],
-    patches = ["//third_party/codeql:codeql_coding_standards_misra.patch"],
-    sha256 = "2aa4f4c3efd87eb24fe33bbef7f982b616a6653ae4f2a67ece268ef50cdd1ff3",
+    sha256 = "e45361023f305bd4065526dd430c2619f7f190fda9a324dafbfb070e8c3c146b",
     strip_prefix = "codeql-coding-standards-{version}".format(version = CODING_STANDARDS_VERSION),
     urls = ["https://github.com/github/codeql-coding-standards/archive/refs/tags/v{version}.tar.gz".format(version = CODING_STANDARDS_VERSION)],
 )
@@ -422,7 +420,7 @@ codeql_release_pack = use_repo_rule(
 codeql_release_pack(
     name = "codeql_coding_standards_compiled",
     pack_tarball = "misra-cpp-coding-standards.tgz",
-    sha256 = "775e34cb36e522c30f3c4381c0758a7fbe29e6c9a5428eb6c9ad67ebd145cb0b",
+    sha256 = "897f8bfb5a13683ad611fcdd07e4cd2cd96ab3973253c439ea6fc8882b32c8cc",
     urls = ["https://github.com/github/codeql-coding-standards/releases/download/v{version}/coding-standards-codeql-packs.zip".format(version = CODING_STANDARDS_VERSION)],
 )
 

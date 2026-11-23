@@ -12,7 +12,120 @@
 # *******************************************************************************
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@score_tooling//bazel/rules/rules_score:rules_score.bzl", "component", "unit")
 load("//quality/unit_testing:unit_testing.bzl", "cc_unit_test")
+
+unit(
+    name = "errors",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/dependability/errors:unit_design",
+    ],
+    visibility = ["//score/mw/com/dependability:__pkg__"],
+    implementation = [],
+)
+
+unit(
+    name = "service_instance_identifiers",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/dependability/service_instance_identifiers:unit_design",
+    ],
+    visibility = ["//score/mw/com/dependability:__pkg__"],
+    implementation = [],
+)
+
+component(
+    name = "binding_independent",
+    components = [
+        ":skeleton_and_service_elements",
+        ":proxy_and_service_elements",
+        ":generic_skeleton_and_service_elements",
+        ":generic_proxy_and_service_elements",
+        ":service_discovery_unit",
+        ":runtime_unit",
+        ":sample_management_pointers",
+        "//score/mw/com/impl/mocking:mocks",
+    ],
+    requirements = [],
+    target_compatible_with = ["@platforms//os:linux"],
+    tests = [],
+    visibility = ["//score/mw/com/dependability:__pkg__"],
+)
+
+unit(
+    name = "skeleton_and_service_elements",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/dependability/skeleton_and_service_elements:unit_design",
+    ],
+    implementation = [],
+)
+
+unit(
+    name = "proxy_and_service_elements",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/dependability/proxy_and_service_elements:unit_design",
+    ],
+    implementation = [],
+)
+
+unit(
+    name = "generic_skeleton_and_service_elements",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/dependability/generic_skeleton_and_service_elements:unit_design",
+    ],
+    implementation = [],
+)
+
+unit(
+    name = "generic_proxy_and_service_elements",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/dependability/generic_proxy_and_service_elements:unit_design",
+    ],
+    implementation = [],
+)
+
+unit(
+    name = "runtime_unit",
+    design_name = "runtime",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/dependability/runtime:unit_design",
+    ],
+    implementation = [],
+)
+
+unit(
+    name = "service_discovery_unit",
+    design_name = "service_discovery",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/dependability/service_discovery:unit_design",
+    ],
+    implementation = [],
+)
+
+unit(
+    name = "sample_management_pointers",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/dependability/sample_management_pointers:unit_design",
+    ],
+    implementation = [],
+)
 
 package(default_visibility = [
     "//score/mw/com/impl:__subpackages__",
@@ -432,7 +545,9 @@ cc_library(
         ":proxy_binding",
         ":proxy_event_binding",
         ":sample_reference_tracker",
+        "//score/mw/com/impl/e2e:e2e_summary",
         "//score/mw/com/impl/mocking:i_proxy_event",
+        "//score/mw/com/impl/plumbing:sample_ptr",
         "//score/mw/com/impl/tracing:proxy_event_tracing_data",
         "@score_baselibs//score/language/safecpp/scoped_function:scope",
     ],
@@ -568,6 +683,7 @@ cc_library(
         ":subscription_state",
         ":subscription_state_change_handler",
         "//score/mw/com/impl/configuration",
+        "//score/mw/com/impl/e2e:e2e_result",
         "//score/mw/com/impl/plumbing:sample_ptr",
         "//score/mw/com/impl/tracing:i_tracing_runtime",
         "@score_baselibs//score/language/futurecpp",
@@ -1139,7 +1255,7 @@ cc_unit_test(
         ":impl",
         ":runtime_mock",
         ":service_discovery_mock",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
         "//score/mw/com/impl/test:binding_factory_resources",
         "//score/mw/com/impl/test:dummy_instance_identifier_builder",
         "//score/mw/com/impl/test:runtime_mock_guard",
@@ -1245,7 +1361,7 @@ cc_unit_test(
     deps = [
         ":error",
         ":impl",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
         "//score/mw/com/impl/test:runtime_mock_guard",
     ],
 )
@@ -1264,6 +1380,16 @@ cc_unit_test(
 )
 
 cc_unit_test(
+    name = "proxy_event_e2e_attach_test",
+    srcs = ["proxy_event_e2e_attach_test.cpp"],
+    deps = [
+        ":generic_proxy_event",
+        ":proxy_event",
+        "//score/mw/com/impl/bindings/mock_binding",
+    ],
+)
+
+cc_unit_test(
     name = "proxy_base_test",
     srcs = ["proxy_base_test.cpp"],
     features = [
@@ -1275,7 +1401,7 @@ cc_unit_test(
         ":impl",
         ":runtime_mock",
         ":service_discovery_mock",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
         "//score/mw/com/impl/configuration/test:configuration_store",
         "//score/mw/com/impl/test:runtime_mock_guard",
         "@score_baselibs//score/language/futurecpp",
@@ -1308,6 +1434,7 @@ cc_unit_test(
         ":generic_skeleton",
         ":generic_skeleton_event",
         ":service_discovery_mock",
+        "//score/mw/com/impl/bindings/mock_binding",
         "//score/mw/com/impl/test:binding_factory_resources",
         "//score/mw/com/impl/test:dummy_instance_identifier_builder",
         "//score/mw/com/impl/test:runtime_mock_guard",
@@ -1343,7 +1470,7 @@ cc_unit_test(
     ],
     deps = [
         ":service_discovery_mock",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
         "//score/mw/com/impl/configuration/test:configuration_store",
         "//score/mw/com/impl/mocking:test_type_utilities",
         "//score/mw/com/impl/plumbing:sample_allocatee_ptr",
@@ -1424,8 +1551,9 @@ cc_unit_test(
         ":generic_proxy_event",
         ":proxy_event_base",
         "//score/mw/com:types",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
         "//score/mw/com/impl/test:proxy_resources",
+        "@score_baselibs//score/language/futurecpp:futurecpp_test_support",
     ],
 )
 
@@ -1470,7 +1598,7 @@ cc_unit_test(
     srcs = ["proxy_event_base_test.cpp"],
     deps = [
         ":impl",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
         "//score/mw/com/impl/test:proxy_resources",
     ],
 )
@@ -1480,6 +1608,9 @@ cc_unit_test(
     srcs = ["proxy_event_binding_test.cpp"],
     deps = [
         ":proxy_event_binding",
+        ":sample_reference_tracker",
+        "//score/mw/com/impl/e2e:e2e_result",
+        "//score/mw/com/impl/plumbing:sample_ptr",
     ],
 )
 
@@ -1505,7 +1636,7 @@ cc_unit_test(
     deps = [
         ":impl",
         ":runtime_mock",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
     ],
 )
 
@@ -1532,7 +1663,8 @@ cc_unit_test(
     deps = [
         ":runtime_mock",
         ":skeleton_event",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
+        "//score/mw/com/impl/mocking:skeleton_event_mock",
         "//score/mw/com/impl/mocking:test_type_utilities",
         "//score/mw/com/impl/test:binding_factory_resources",
         "//score/mw/com/impl/test:runtime_mock_guard",
@@ -1545,7 +1677,7 @@ cc_unit_test(
     deps = [
         ":impl",
         ":runtime_mock",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
     ],
 )
 
@@ -1555,7 +1687,7 @@ cc_unit_test(
     deps = [
         ":runtime_mock",
         ":skeleton_field",
-        "//score/mw/com/impl/bindings/mock_binding:mock_binding_lib",
+        "//score/mw/com/impl/bindings/mock_binding",
         "//score/mw/com/impl/mocking:test_type_utilities",
         "//score/mw/com/impl/test:binding_factory_resources",
         "//score/mw/com/impl/test:runtime_mock_guard",

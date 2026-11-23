@@ -26,6 +26,7 @@ failure_modes(
     name = "memory_shared_failure_modes",
     srcs = ["failure_modes.trlc"],
     target_compatible_with = ["@platforms//os:linux"],
+    deps = ["//score/memory/shared/dependability/architectural_design:software_architectural_design"],
 )
 
 fault_trees(
@@ -36,7 +37,6 @@ fault_trees(
 
 safety_analysis(
     name = "memory_shared_safety_analysis",
-    arch_design = "//score/memory/shared/dependability:memory_shared_architectural_design",
     failure_modes = [":memory_shared_failure_modes"],
     fault_trees = ":memory_shared_fault_trees",
     visibility = ["//score/memory/shared/dependability:__pkg__"],
@@ -44,7 +44,7 @@ safety_analysis(
 
 dependability_analysis(
     name = "memory_shared_dependability_analysis",
-    arch_design = "//score/memory/shared/dependability:memory_shared_architectural_design",
+    arch_design = "//score/memory/shared/dependability/architectural_design:software_architectural_design",
     safety_analysis = [":memory_shared_safety_analysis"],
     tags = ["manual"],
     visibility = ["//score/memory/shared/dependability:__pkg__"],

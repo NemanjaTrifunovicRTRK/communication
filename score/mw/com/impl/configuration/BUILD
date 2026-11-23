@@ -15,10 +15,22 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 load("@score_baselibs//score/flatbuffers/bazel:codegen.bzl", "generate_cpp")
 load("@score_baselibs//score/flatbuffers/bazel:tools.bzl", "generate_json_schema")
+load("@score_tooling//bazel/rules/rules_score:rules_score.bzl", "unit")
 load("//bazel/rules:expand_template.bzl", "expand_template")
 load("//bazel/tools:json_schema_validator.bzl", "validate_json_schema_test")
 load("//quality/unit_testing:unit_testing.bzl", "cc_unit_test")
 load("//score/mw/com/impl/configuration/converter:json_to_flatbuffer_rule.bzl", "json_to_flatbuffer")
+
+unit(
+    name = "mw_com_configuration",
+    scope = [],
+    tests = [],
+    unit_design = [
+        "//score/mw/com/impl/configuration/dependability:unit_design",
+    ],
+    visibility = ["//score/mw/com/dependability:__pkg__"],
+    implementation = [],
+)
 
 exports_files(
     [
@@ -503,7 +515,10 @@ cc_library(
     name = "someip_service_instance_id",
     srcs = ["someip_service_instance_id.cpp"],
     hdrs = ["someip_service_instance_id.h"],
-    implementation_deps = [":configuration_common_resources"],
+    implementation_deps = [
+        ":configuration_common_resources",
+        "@score_baselibs//score/language/safecpp/safe_math",
+    ],
     tags = ["FFI"],
     visibility = ["//score/mw/com/impl/bindings/someip:__pkg__"],
     deps = ["@score_baselibs//score/json"],
@@ -652,11 +667,20 @@ cc_library(
     tags = ["FFI"],
     deps = [
         ":configuration_common_resources",
+        ":e2e_event_type_deployment",
         "//score/mw/com/impl:binding_type",
         "//score/mw/com/impl:service_element_type",
         "@score_baselibs//score/json",
         "@score_baselibs//score/language/safecpp/safe_math",
     ],
+)
+
+cc_library(
+    name = "e2e_event_type_deployment",
+    srcs = ["e2e_event_type_deployment.cpp"],
+    hdrs = ["e2e_event_type_deployment.h"],
+    tags = ["FFI"],
+    deps = ["@score_baselibs//score/language/safecpp/safe_math"],
 )
 
 cc_library(

@@ -83,21 +83,6 @@ namespace
 
 constexpr LolaMethodInstanceDeployment::QueueSize kFieldMethodQueueSize{1U};
 
-// Suppress "AUTOSAR C++14 A16-0-1" rule findings. This rule stated: "The pre-processor shall only be used for
-// unconditional and conditional file inclusion and include guards, and using the following directives: (1) #ifndef,
-// #ifdef, (3) #if, (4) #if defined, (5) #elif, (6) #else, (7) #define, (8) #endif, (9) #include.".
-// Checks whether we run over QNX or linux to choose the appropriate path.
-// coverity[autosar_cpp14_a16_0_1_violation]
-#ifdef __QNXNTO__
-// Deviation of MISRA RULE-6-7-2: codeql::misra_deviation_next_line(immutable-non-constexpr-constant)
-const filesystem::Path kShmPathPrefix{"/dev/shmem"};
-// coverity[autosar_cpp14_a16_0_1_violation]
-#else
-// Deviation of MISRA RULE-6-7-2: codeql::misra_deviation_next_line(immutable-non-constexpr-constant)
-const filesystem::Path kShmPathPrefix{"/dev/shm"};
-// coverity[autosar_cpp14_a16_0_1_violation]
-#endif
-
 using memory::DataTypeSizeInfo;
 
 /// \brief Tries to place a shared flock on the given service instance usage marker file
@@ -178,6 +163,10 @@ OpenSharedMemory(const LolaServiceInstanceDeployment& instance_deployment,
         // With strict permission-checks, an absent allowedProvider is treated the same as an empty list:
         // no provider is accepted. Without strict, an absent allowedProvider means no restriction (nullopt).
         providers = std::make_optional(score::cpp::span<const uid_t>{});
+    }
+    else
+    {
+        // No restriction on providers: providers stays std::nullopt.
     }
 
     ShmPathBuilder shm_path_builder{lola_service_deployment.service_id_};
@@ -550,6 +539,10 @@ void Proxy::ServiceAvailabilityChangeHandler(const bool is_service_available)
             }
         }
     }
+    else
+    {
+        // Other states require no action on the ProxyMethods.
+    }
 }
 
 // Suppress "AUTOSAR C++14 A15-5-3" rule findings. This rule states: "The std::terminate() function shall not be called
@@ -656,6 +649,13 @@ bool Proxy::IsEventProvided(const std::string_view event_name) const
 
 score::Result<void> Proxy::SetupMethods(const std::size_t additional_shm_size_bytes)
 {
+    // path variables are made static to not have to construct them on every call
+#ifdef __QNXNTO__
+    static const filesystem::Path kShmPathPrefix{"/dev/shmem"};
+#else
+    static const filesystem::Path kShmPathPrefix{"/dev/shm"};
+#endif
+
     auto enabled_method_data = GetMethodIdAndQueueSizeForEnabledMethods();
 
     if (enabled_method_data.empty())
